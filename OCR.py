@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 import cv2
 import numpy as np
-import inspect
 from paddleocr import PaddleOCR
 from strsimpy import SorensenDice
 from strsimpy.jaro_winkler import JaroWinkler
@@ -20,6 +19,9 @@ Author: Stumpii
 """
 
 
+import inspect
+
+
 class OCR:
     def __init__(self, screen, language: str = 'en', debug: bool = False):
         self.screen = screen
@@ -34,6 +36,15 @@ class OCR:
     def set_debug_mode(self, function: str, mode: bool):
         self.debug_mode[function] = mode
 
+    def _should_debug(self):
+        if self.debug:
+            return True
+        for frame_info in inspect.stack():
+            func_name = frame_info.function
+            if func_name in self.debug_mode and self.debug_mode[func_name]:
+                return True
+        return False
+
     def string_similarity(self, s1, s2) -> float:
         """ Performs a string similarity check and returns the result.
         @param s1: The first string to compare.
@@ -43,7 +54,7 @@ class OCR:
         #return self.jarowinkler.similarity(s1, s2)
         return self.sorensendice.similarity(s1, s2)
 
-    def image_ocr(self, image, debug_mode: bool = False):
+    def image_ocr(self, image):
         """ Perform OCR with no filtering. Returns the full OCR data and a simplified list of strings.
         This routine is the slower than the simplified OCR.
 
@@ -52,7 +63,7 @@ class OCR:
         """
         ocr_data = self.paddleocr.ocr(image)
 
-        if self.debug or debug_mode:
+        if self._should_debug():
             debug_image = image.copy()
             if ocr_data:
                 for res in ocr_data:
@@ -75,7 +86,7 @@ class OCR:
 
             return ocr_data, ocr_textlist
 
-    def image_simple_ocr(self, image, debug_mode: bool = False) -> list[str] | None:
+    def image_simple_ocr(self, image) -> list[str] | None:
         """ Perform OCR with no filtering. Returns a simplified list of strings with no positional data.
         This routine is faster than the function that returns the full data. Generally good when you
         expect to only return one or two lines of text.
@@ -85,7 +96,7 @@ class OCR:
         """
         ocr_data = self.paddleocr.ocr(image)
 
-        if self.debug or debug_mode:
+        if self._should_debug():
             debug_image = image.copy()
             if ocr_data:
                 for res in ocr_data:
@@ -122,7 +133,7 @@ class OCR:
         if img_selected is not None:
             # cv2.imshow("img", img_selected)
 
-            ocr_data, ocr_textlist = self.image_ocr(img_selected, self.debug_mode.get(inspect.stack()[1].function, False))
+            ocr_data, ocr_textlist = self.image_ocr(img_selected)
 
             if ocr_data is not None:
                 return img_selected, ocr_data, ocr_textlist
@@ -147,26 +158,31 @@ class OCR:
         upper_range = np.array([255, 255, 255])
         mask = cv2.inRange(hsv, lower_range, upper_range)
         masked_image = cv2.bitwise_and(image, image, mask=mask)
-        cv2.imwrite('test/nav-panel/out/1-masked.png', masked_image)
+        if self._should_debug():
+            cv2.imshow('1-masked', masked_image)
 
         # Convert to gray scale and invert
         gray = cv2.cvtColor(masked_image, cv2.COLOR_BGR2GRAY)
-        cv2.imwrite('test/nav-panel/out/2-gray.png', gray)
+        if self._should_debug():
+            cv2.imshow('2-gray', gray)
 
         # Blur slightly to remove thin lines
         blur = cv2.GaussianBlur(gray, (3, 3), cv2.BORDER_DEFAULT)
-        cv2.imwrite('test/nav-panel/out/3-blur.png', blur)
+        if self._should_debug():
+            cv2.imshow('3-blur', blur)
 
         # Convert to B&W to allow FindContours to find rectangles.
         ret, thresh1 = cv2.threshold(blur, 0, 255, cv2.THRESH_OTSU)  # | cv2.THRESH_BINARY_INV)
-        cv2.imwrite('test/nav-panel/out/4-thresh1.png', thresh1)
+        if self._should_debug():
+            cv2.imshow('4-thresh1', thresh1)
 
         # Finding contours in B&W image. White are the areas detected
         contours, hierarchy = cv2.findContours(thresh1, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        output = image
+        output = image.copy()
         cv2.drawContours(output, contours, -1, (0, 255, 0), 2)
-        cv2.imwrite('test/nav-panel/out/5-contours.png', output)
+        if self._should_debug():
+            cv2.imshow('5-contours', output)
 
         # bounds = image
         cropped = image
@@ -180,10 +196,15 @@ class OCR:
                 # Crop to leave only the contour (the selected rectangle)
                 cropped = image[y:y + h, x:x + w]
 
-                # cv2.imshow("cropped", cropped)
-                cv2.imwrite('test/nav-panel/out/6-selected_item.png', cropped)
+                if self._should_debug():
+                    cv2.imshow("6-selected_item", cropped)
+                    cv2.waitKey(0)
+                    cv2.destroyAllWindows()
                 return cropped, x, y
 
+        if self._should_debug():
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
         # No good matches, then return None
         return None, 0, 0
 
@@ -210,7 +231,7 @@ class OCR:
             logger.debug(f"Did not find a selected item in the region.")
             return None
 
-        ocr_textlist = self.image_simple_ocr(img_selected, self.debug_mode.get(inspect.stack()[1].function, False))
+        ocr_textlist = self.image_simple_ocr(img_selected)
         # print(str(ocr_textlist))
 
         if text.upper() in str(ocr_textlist):
@@ -231,7 +252,7 @@ class OCR:
 
         img = self.capture_region_pct(region)
 
-        ocr_textlist = self.image_simple_ocr(img, self.debug_mode.get(inspect.stack()[1].function, False))
+        ocr_textlist = self.image_simple_ocr(img)
         # print(str(ocr_textlist))
 
         if text.upper() in str(ocr_textlist):
