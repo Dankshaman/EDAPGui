@@ -188,6 +188,8 @@ class OCR:
         cropped = image
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
+            if self._should_debug():
+                logger.info(f"Contour found: w={w}, h={h}. Min required: w>{min_w*0.9}, h>{min_h*0.9}")
             # Check the item is greater than 90% of the minimum width or height. Which allows for some variation.
             if w > (min_w * 0.9) and h > (min_h * 0.9):
                 # Drawing a rectangle on the copied image
