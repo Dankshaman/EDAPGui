@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import cv2
 import numpy as np
+import inspect
 from paddleocr import PaddleOCR
 from strsimpy import SorensenDice
 from strsimpy.jaro_winkler import JaroWinkler
@@ -20,13 +21,18 @@ Author: Stumpii
 
 
 class OCR:
-    def __init__(self, screen, language: str = 'en'):
+    def __init__(self, screen, language: str = 'en', debug: bool = False):
         self.screen = screen
+        self.debug = debug
+        self.debug_mode = {'ocr_debug_request_docking': False, 'ocr_debug_goto_system_map': False, 'ocr_debug_goto_station_services': False, 'ocr_debug_goto_galaxy_map': False, 'ocr_debug_is_right_panel_active': False}
         self.paddleocr = PaddleOCR(use_angle_cls=True, lang=language, use_gpu=False, show_log=False, use_dilation=True,
                                    use_space_char=True)
         # Class for text similarity metrics
         self.jarowinkler = JaroWinkler()
         self.sorensendice = SorensenDice()
+
+    def set_debug_mode(self, function: str, mode: bool):
+        self.debug_mode[function] = mode
 
     def string_similarity(self, s1, s2) -> float:
         """ Performs a string similarity check and returns the result.
@@ -37,7 +43,7 @@ class OCR:
         #return self.jarowinkler.similarity(s1, s2)
         return self.sorensendice.similarity(s1, s2)
 
-    def image_ocr(self, image):
+    def image_ocr(self, image, debug_mode: bool = False):
         """ Perform OCR with no filtering. Returns the full OCR data and a simplified list of strings.
         This routine is the slower than the simplified OCR.
 
@@ -46,7 +52,16 @@ class OCR:
         """
         ocr_data = self.paddleocr.ocr(image)
 
-        # print(ocr_data)
+        if self.debug or debug_mode:
+            debug_image = image.copy()
+            if ocr_data:
+                for res in ocr_data:
+                    if res:
+                        for line in res:
+                            cv2.rectangle(debug_image, tuple(map(int, line[0][0])), tuple(map(int, line[0][2])), (0, 255, 0), 2)
+                            cv2.putText(debug_image, str(line[1][0]), tuple(map(int, line[0][0])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            cv2.imshow("OCR Debug", debug_image)
+            cv2.waitKey(0)
 
         if ocr_data is None:
             return None, None
@@ -58,10 +73,9 @@ class OCR:
                 for line in res:
                     ocr_textlist.append(line[1][0])
 
-            #print(ocr_textlist)
             return ocr_data, ocr_textlist
 
-    def image_simple_ocr(self, image) -> list[str] | None:
+    def image_simple_ocr(self, image, debug_mode: bool = False) -> list[str] | None:
         """ Perform OCR with no filtering. Returns a simplified list of strings with no positional data.
         This routine is faster than the function that returns the full data. Generally good when you
         expect to only return one or two lines of text.
@@ -71,7 +85,16 @@ class OCR:
         """
         ocr_data = self.paddleocr.ocr(image)
 
-        # print(f"image_simple_ocr: {ocr_data}")
+        if self.debug or debug_mode:
+            debug_image = image.copy()
+            if ocr_data:
+                for res in ocr_data:
+                    if res:
+                        for line in res:
+                            cv2.rectangle(debug_image, tuple(map(int, line[0][0])), tuple(map(int, line[0][2])), (0, 255, 0), 2)
+                            cv2.putText(debug_image, str(line[1][0]), tuple(map(int, line[0][0])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            cv2.imshow("OCR Debug", debug_image)
+            cv2.waitKey(0)
 
         if ocr_data is None:
             return None
@@ -84,8 +107,6 @@ class OCR:
                 for line in res:
                     ocr_textlist.append(line[1][0])
 
-            # print(f"image_simple_ocr: {ocr_textlist}")
-            # logger.info(f"image_simple_ocr: {ocr_textlist}")
             return ocr_textlist
 
     def get_highlighted_item_data(self, image, min_w, min_h):
@@ -101,7 +122,7 @@ class OCR:
         if img_selected is not None:
             # cv2.imshow("img", img_selected)
 
-            ocr_data, ocr_textlist = self.image_ocr(img_selected)
+            ocr_data, ocr_textlist = self.image_ocr(img_selected, self.debug_mode.get(inspect.stack()[1].function, False))
 
             if ocr_data is not None:
                 return img_selected, ocr_data, ocr_textlist
@@ -189,7 +210,7 @@ class OCR:
             logger.debug(f"Did not find a selected item in the region.")
             return None
 
-        ocr_textlist = self.image_simple_ocr(img_selected)
+        ocr_textlist = self.image_simple_ocr(img_selected, self.debug_mode.get(inspect.stack()[1].function, False))
         # print(str(ocr_textlist))
 
         if text.upper() in str(ocr_textlist):
@@ -210,7 +231,7 @@ class OCR:
 
         img = self.capture_region_pct(region)
 
-        ocr_textlist = self.image_simple_ocr(img)
+        ocr_textlist = self.image_simple_ocr(img, self.debug_mode.get(inspect.stack()[1].function, False))
         # print(str(ocr_textlist))
 
         if text.upper() in str(ocr_textlist):

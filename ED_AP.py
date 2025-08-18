@@ -2606,6 +2606,21 @@ class EDAutopilot:
         self.keys.send('SetSpeed50')
         self.yawLeft(360)
 
+    def ocr_debug_request_docking(self):
+        self.nav_panel.request_docking()
+
+    def ocr_debug_goto_system_map(self):
+        self.system_map.goto_system_map()
+
+    def ocr_debug_goto_station_services(self):
+        self.stn_svcs_in_ship.goto_station_services()
+
+    def ocr_debug_goto_galaxy_map(self):
+        self.galaxy_map.goto_galaxy_map()
+
+    def ocr_debug_is_right_panel_active(self):
+        self.internal_panel.is_right_panel_active()
+
 
 #
 # This main is for testing purposes.

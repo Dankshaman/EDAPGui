@@ -725,6 +725,28 @@ class APGui():
             else:
                 self.ed_ap.debug_overlay = False
 
+    def check_cb_ocr(self, field):
+        if field == 'Request Docking OCR':
+            self.ed_ap.ocr.set_debug_mode('ocr_debug_request_docking', self.checkboxvar['Request Docking OCR'].get())
+            if self.checkboxvar['Request Docking OCR'].get():
+                self.ed_ap.ocr_debug_request_docking()
+        elif field == 'Goto System Map OCR':
+            self.ed_ap.ocr.set_debug_mode('ocr_debug_goto_system_map', self.checkboxvar['Goto System Map OCR'].get())
+            if self.checkboxvar['Goto System Map OCR'].get():
+                self.ed_ap.ocr_debug_goto_system_map()
+        elif field == 'Goto Station Services OCR':
+            self.ed_ap.ocr.set_debug_mode('ocr_debug_goto_station_services', self.checkboxvar['Goto Station Services OCR'].get())
+            if self.checkboxvar['Goto Station Services OCR'].get():
+                self.ed_ap.ocr_debug_goto_station_services()
+        elif field == 'Goto Galaxy Map OCR':
+            self.ed_ap.ocr.set_debug_mode('ocr_debug_goto_galaxy_map', self.checkboxvar['Goto Galaxy Map OCR'].get())
+            if self.checkboxvar['Goto Galaxy Map OCR'].get():
+                self.ed_ap.ocr_debug_goto_galaxy_map()
+        elif field == 'Is Right Panel Active OCR':
+            self.ed_ap.ocr.set_debug_mode('ocr_debug_is_right_panel_active', self.checkboxvar['Is Right Panel Active OCR'].get())
+            if self.checkboxvar['Is Right Panel Active OCR'].get():
+                self.ed_ap.ocr_debug_is_right_panel_active()
+
     def makeform(self, win, ftype, fields, r=0, inc=1, rfrom=0, rto=1000):
         entries = {}
 
@@ -966,6 +988,25 @@ class APGui():
 
         btn_load_tce = Button(blk_single_waypoint_asst, text='Load TCE Destination', command=self.load_tce_dest)
         btn_load_tce.grid(row=5, column=0, padx=2, pady=2, columnspan=2, sticky=(N, E, W, S))
+
+        # ocr debug block
+        blk_ocr_debug = LabelFrame(page2, text="OCR DEBUG")
+        blk_ocr_debug.grid(row=2, column=0, padx=10, pady=5, columnspan=2, sticky=(N, S, E, W))
+        self.checkboxvar['Request Docking OCR'] = BooleanVar()
+        cb_ocr_docking = Checkbutton(blk_ocr_debug, text='Request Docking', onvalue=1, offvalue=0, anchor='w', pady=3, justify=LEFT, variable=self.checkboxvar['Request Docking OCR'], command=(lambda field='Request Docking OCR': self.check_cb_ocr(field)))
+        cb_ocr_docking.grid(row=0, column=0, columnspan=2, sticky=(W))
+        self.checkboxvar['Goto System Map OCR'] = BooleanVar()
+        cb_ocr_sysmap = Checkbutton(blk_ocr_debug, text='Goto System Map', onvalue=1, offvalue=0, anchor='w', pady=3, justify=LEFT, variable=self.checkboxvar['Goto System Map OCR'], command=(lambda field='Goto System Map OCR': self.check_cb_ocr(field)))
+        cb_ocr_sysmap.grid(row=1, column=0, columnspan=2, sticky=(W))
+        self.checkboxvar['Goto Station Services OCR'] = BooleanVar()
+        cb_ocr_stnsvc = Checkbutton(blk_ocr_debug, text='Goto Station Services', onvalue=1, offvalue=0, anchor='w', pady=3, justify=LEFT, variable=self.checkboxvar['Goto Station Services OCR'], command=(lambda field='Goto Station Services OCR': self.check_cb_ocr(field)))
+        cb_ocr_stnsvc.grid(row=2, column=0, columnspan=2, sticky=(W))
+        self.checkboxvar['Goto Galaxy Map OCR'] = BooleanVar()
+        cb_ocr_galaxymap = Checkbutton(blk_ocr_debug, text='Goto Galaxy Map', onvalue=1, offvalue=0, anchor='w', pady=3, justify=LEFT, variable=self.checkboxvar['Goto Galaxy Map OCR'], command=(lambda field='Goto Galaxy Map OCR': self.check_cb_ocr(field)))
+        cb_ocr_galaxymap.grid(row=3, column=0, columnspan=2, sticky=(W))
+        self.checkboxvar['Is Right Panel Active OCR'] = BooleanVar()
+        cb_ocr_rightpanel = Checkbutton(blk_ocr_debug, text='Is Right Panel Active', onvalue=1, offvalue=0, anchor='w', pady=3, justify=LEFT, variable=self.checkboxvar['Is Right Panel Active OCR'], command=(lambda field='Is Right Panel Active OCR': self.check_cb_ocr(field)))
+        cb_ocr_rightpanel.grid(row=4, column=0, columnspan=2, sticky=(W))
 
         blk_debug_buttons = tk.Frame(page2)
         blk_debug_buttons.grid(row=3, column=0, padx=10, pady=5, columnspan=2, sticky=(N, S, E, W))
