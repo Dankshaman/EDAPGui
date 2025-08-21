@@ -49,6 +49,35 @@ Refer to *Docking with a Station* above. In addition to Trading (Buy/Sell), Flee
 <br>
 _Note: There appears to be a bug that sometimes prevents bookmarking a Fleet Carrier in the System Map. If this occurs, it is still possible to bookmark the FC through the Navigation Panel. Once bookmarked, it will be accessible through the System Map._
 
+## Docking with a Station using Nav-OCR
+This method uses Optical Character Recognition (OCR) to read the in-game navigation panel and find the target by its name. This is particularly useful for dynamically generated locations or for targets that don't support bookmarking.
+
+When `SystemBookmarkType` is set to `nav-ocr`, the autopilot will:
+1. Open the ship's navigation panel.
+2. Scroll through the list of available destinations.
+3. Use OCR to read the name of each highlighted entry.
+4. If an entry matches the `StationName` in the waypoint, it will select it and set it as the destination.
+
+A special case exists for Colonisation Ships. If the `StationName` is `EXT_PANEL_ColonisationShip; <name of ship>`, the autopilot will correctly identify and target the ship.
+
+Here is an example of a waypoint using `nav-ocr`:
+```json
+"3": {
+    "SystemName": "Sol",
+    "StationName": "Mars High",
+    "GalaxyBookmarkType": "",
+    "GalaxyBookmarkNumber": 0,
+    "SystemBookmarkType": "nav-ocr",
+    "SystemBookmarkNumber": 0,
+    "SellCommodities": {},
+    "BuyCommodities": {},
+    "UpdateCommodityCount": false,
+    "FleetCarrierTransfer": false,
+    "Skip": false,
+    "Completed": false
+}
+```
+
 ## Trading
 The **SellCommodities** and **BuyCommodities** lists are associated with auto-trading and each waypoint will have both lists and either or both may be empty. If either of the lists are not empty, the trade executor kicks in, brings up Commodities Screen and will perform the Selling and then Buying of each listed commodity if it can be traded. The commodities will be processed in the order defined, so place the important items first. There is also an option to update the item counts as the items are bought and sold.
 
