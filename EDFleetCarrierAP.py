@@ -101,7 +101,7 @@ class FleetCarrierAutopilot:
         log_file_path = self.journal.get_latest_log()
         with open(log_file_path, 'r', encoding='utf-8') as f:
             f.seek(0, 2) # Go to the end of the file
-            timeout = time() + 30 * 60 # 30 minutes timeout
+            timeout = time() + 60 * 60 # 30 minutes timeout
             while time() < timeout:
                 line = f.readline()
                 if line:
