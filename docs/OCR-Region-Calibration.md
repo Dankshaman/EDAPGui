@@ -67,7 +67,7 @@ Below are the different OCR regions that require calibration, along with example
 ### Station Services - Connected To
 
 *   **Region:** `EDStationServicesInShip.connected_to`
-*   **Description:** This region reads the name of the station you are currently docked at.
+*   **Description:** This region checks for "Connected To" to verify that we have entered the station menu.
 *   **Example:**
     ![Station Services Connected To](Calibration%20Images/EDStationServicesInShip.connected_to.png)
 
