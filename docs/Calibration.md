@@ -7,12 +7,6 @@ A configuration file called _config-resolution.json_ contains standard Screen re
 ## Compass Calibration
 Not all ships have the same size compass, so it is necessary to calibrate the compass of each of your ships to take into account the resolution of the screen and FOV. Once saved, the correct scaling will automatically be loaded when changing ships.
 
-## OCR Region Calibration
-Because of scaling issues with different resolutions and FOV's, I have added a calibration tab that allows you to calibrate all OCR regions, Check Docs/Calibration Images/ for the correct locations.
-
-# Process
-Choose the region you would like to calibrate and click the calibrate region button. click and drag to create the new region zone. make sure to "save all" at the bottom of the calibration tab and restart for them to take effect.
-
 ``` Note: No commands will be sent to ED during this calibration, it will simply be performing screen grabs. ```
 
 Also see:  HOWTO-RollPitchYaw.md on how to adjust your autopilot performance while maneuvering to target.
