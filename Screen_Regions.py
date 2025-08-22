@@ -4,6 +4,12 @@ import cv2
 import json
 import os
 
+try:
+    import vpi
+    _vpi_available = True
+except ImportError:
+    _vpi_available = False
+
 
 """
 File:Screen_Regions.py    
@@ -91,6 +97,15 @@ class Screen_Regions:
     def __init__(self, screen, templ):
         self.screen = screen
         self.templates = templ
+        self.cuda_available = False
+        if _vpi_available:
+            try:
+                # Attempt to use the CUDA backend to see if it's available
+                with vpi.Backend.CUDA:
+                    pass
+                self.cuda_available = True
+            except Exception:
+                self.cuda_available = False
 
         # Define the thresholds for template matching to be consistent throughout the program
         self.compass_match_thresh = 0.35
@@ -161,10 +176,31 @@ class Screen_Regions:
     def match_template_in_region(self, region_name, templ_name, inv_col=True):
         """ Attempt to match the given template in the given region which is filtered using the region filter.
         Returns the filtered image, detail of match and the match mask. """
-        img_region = self.capture_region_filtered(self.screen, region_name, inv_col)    # which would call, reg.capture_region('compass') and apply defined filter
-        match = cv2.matchTemplate(img_region, self.templates.template[templ_name]['image'], cv2.TM_CCOEFF_NORMED)
-        (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(match)
-        return img_region, (minVal, maxVal, minLoc, maxLoc), match
+        img_region = self.capture_region_filtered(self.screen, region_name, inv_col)
+
+        if self.cuda_available:
+            # GPU-accelerated path
+            templ_img = self.templates.template[templ_name]['image']
+
+            # Convert images to grayscale if they are not already
+            if len(img_region.shape) > 2:
+                img_region = cv2.cvtColor(img_region, cv2.COLOR_BGR2GRAY)
+            if len(templ_img.shape) > 2:
+                templ_img = cv2.cvtColor(templ_img, cv2.COLOR_BGR2GRAY)
+
+            vpi_image = vpi.asimage(img_region)
+            vpi_templ = vpi.asimage(templ_img)
+
+            with vpi.Backend.CUDA:
+                result = vpi.templateMatching(vpi_image, vpi_templ, method='TM_CCOEFF_NORMED')
+                min_val, max_val, min_loc, max_loc = result.minmaxloc()
+
+            return img_region, (min_val, max_val, min_loc, max_loc), None
+        else:
+            # Original CPU path
+            match = cv2.matchTemplate(img_region, self.templates.template[templ_name]['image'], cv2.TM_CCOEFF_NORMED)
+            (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(match)
+            return img_region, (minVal, maxVal, minLoc, maxLoc), match
 
     def match_template_in_region_x3(self, region_name, templ_name, inv_col=True):
         """ Attempt to match the given template in the given region which is unfiltered.
@@ -173,38 +209,86 @@ class Screen_Regions:
         img_region = self.screen.get_screen_region(self.reg[region_name]['rect'], rgb=False)
         templ = self.templates.template[templ_name]['image']
 
-        # Convert to HSV and split.
-        img_hsv = cv2.cvtColor(img_region, cv2.COLOR_BGR2HSV)
-        h, s, v = cv2.split(img_hsv)
-        # hsv_comb = np.concatenate((h, s, v), axis=1)  # Combine 3 images
-        # cv2.imshow("Split HSV", hsv_comb)
+        if self.cuda_available:
+            # GPU-accelerated path
+            # Convert to HSV and split.
+            img_hsv = cv2.cvtColor(img_region, cv2.COLOR_BGR2HSV)
+            h, s, v = cv2.split(img_hsv)
+            channels = {'h': h, 's': s, 'v': v}
+            results = {}
 
-        # Perform matches
-        match_h = cv2.matchTemplate(h, templ, cv2.TM_CCOEFF_NORMED)
-        match_s = cv2.matchTemplate(s, templ, cv2.TM_CCOEFF_NORMED)
-        match_v = cv2.matchTemplate(v, templ, cv2.TM_CCOEFF_NORMED)
-        (minVal_h, maxVal_h, minLoc_h, maxLoc_h) = cv2.minMaxLoc(match_h)
-        (minVal_s, maxVal_s, minLoc_s, maxLoc_s) = cv2.minMaxLoc(match_s)
-        (minVal_v, maxVal_v, minLoc_v, maxLoc_v) = cv2.minMaxLoc(match_v)
-        # match_comb = np.concatenate((match_h, match_s, match_v), axis=1)  # Combine 3 images
-        # cv2.imshow("Split Matches", match_comb)
+            if len(templ.shape) > 2:
+                templ = cv2.cvtColor(templ, cv2.COLOR_BGR2GRAY)
 
-        # Get best result
-        # V is likely the best match, so check it first
-        if maxVal_v > maxVal_s and maxVal_v > maxVal_h:
-            return img_region, (minVal_v, maxVal_v, minLoc_v, maxLoc_v), match_v
-        # S is likely the 2nd best match, so check it
-        if maxVal_s > maxVal_h:
-            return img_region, (minVal_s, maxVal_s, minLoc_s, maxLoc_s), match_s
-        # H must be the best match
-        return img_region, (minVal_h, maxVal_h, minLoc_h, maxLoc_h), match_h
+            vpi_templ = vpi.asimage(templ)
+
+            with vpi.Backend.CUDA:
+                for name, channel_img in channels.items():
+                    vpi_channel = vpi.asimage(channel_img)
+                    match_result = vpi.templateMatching(vpi_channel, vpi_templ, method='TM_CCOEFF_NORMED')
+                    min_val, max_val, min_loc, max_loc = match_result.minmaxloc()
+                    results[name] = (min_val, max_val, min_loc, max_loc)
+
+            (minVal_h, maxVal_h, minLoc_h, maxLoc_h) = results['h']
+            (minVal_s, maxVal_s, minLoc_s, maxLoc_s) = results['s']
+            (minVal_v, maxVal_v, minLoc_v, maxLoc_v) = results['v']
+
+            if maxVal_v > maxVal_s and maxVal_v > maxVal_h:
+                return img_region, (minVal_v, maxVal_v, minLoc_v, maxLoc_v), None
+            if maxVal_s > maxVal_h:
+                return img_region, (minVal_s, maxVal_s, minLoc_s, maxLoc_s), None
+            return img_region, (minVal_h, maxVal_h, minLoc_h, maxLoc_h), None
+
+        else:
+            # Original CPU path
+            img_hsv = cv2.cvtColor(img_region, cv2.COLOR_BGR2HSV)
+            h, s, v = cv2.split(img_hsv)
+
+            match_h = cv2.matchTemplate(h, templ, cv2.TM_CCOEFF_NORMED)
+            match_s = cv2.matchTemplate(s, templ, cv2.TM_CCOEFF_NORMED)
+            match_v = cv2.matchTemplate(v, templ, cv2.TM_CCOEFF_NORMED)
+            (minVal_h, maxVal_h, minLoc_h, maxLoc_h) = cv2.minMaxLoc(match_h)
+            (minVal_s, maxVal_s, minLoc_s, maxLoc_s) = cv2.minMaxLoc(match_s)
+            (minVal_v, maxVal_v, minLoc_v, maxLoc_v) = cv2.minMaxLoc(match_v)
+
+            if maxVal_v > maxVal_s and maxVal_v > maxVal_h:
+                return img_region, (minVal_v, maxVal_v, minLoc_v, maxLoc_v), match_v
+            if maxVal_s > maxVal_h:
+                return img_region, (minVal_s, maxVal_s, minLoc_s, maxLoc_s), match_s
+            return img_region, (minVal_h, maxVal_h, minLoc_h, maxLoc_h), match_h
 
     def match_template_in_image(self, image, template):
         """ Attempt to match the given template in the (unfiltered) image.
         Returns the original image, detail of match and the match mask. """
-        match = cv2.matchTemplate(image, self.templates.template[template]['image'], cv2.TM_CCOEFF_NORMED)
-        (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(match)
-        return image, (minVal, maxVal, minLoc, maxLoc), match     
+        if self.cuda_available:
+            # GPU-accelerated path
+            templ_img = self.templates.template[template]['image']
+
+            # Convert images to grayscale if they are not already
+            if len(image.shape) > 2:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            if len(templ_img.shape) > 2:
+                templ_img = cv2.cvtColor(templ_img, cv2.COLOR_BGR2GRAY)
+
+            # Convert numpy arrays to VPI images
+            vpi_image = vpi.asimage(image)
+            vpi_templ = vpi.asimage(templ_img)
+
+            with vpi.Backend.CUDA:
+                # Perform template matching
+                result = vpi.templateMatching(vpi_image, vpi_templ, method='TM_CCOEFF_NORMED')
+
+                # Find the location of the best match
+                min_val, max_val, min_loc, max_loc = result.minmaxloc()
+
+            # Note: The 'match' object (the correlation map) is not returned in the VPI path
+            # as it stays on the GPU. We return None instead.
+            return image, (min_val, max_val, min_loc, max_loc), None
+        else:
+            # Original CPU path
+            match = cv2.matchTemplate(image, self.templates.template[template]['image'], cv2.TM_CCOEFF_NORMED)
+            (minVal, maxVal, minLoc, maxLoc) = cv2.minMaxLoc(match)
+            return image, (minVal, maxVal, minLoc, maxLoc), match
 
     def match_template_in_image_x3(self, image, templ_name):
         """ Attempt to match the given template in the (unfiltered) image.
@@ -212,31 +296,52 @@ class Screen_Regions:
         Returns the original image, detail of match and the match mask. """
         templ = self.templates.template[templ_name]['image']
 
-        # Convert to HSV and split.
-        img_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        h, s, v = cv2.split(img_hsv)
-        # hsv_comb = np.concatenate((h, s, v), axis=1)  # Combine 3 images
-        # cv2.imshow("Split HSV", hsv_comb)
+        if self.cuda_available:
+            # GPU-accelerated path
+            img_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+            h, s, v = cv2.split(img_hsv)
+            channels = {'h': h, 's': s, 'v': v}
+            results = {}
 
-        # Perform matches
-        match_h = cv2.matchTemplate(h, templ, cv2.TM_CCOEFF_NORMED)
-        match_s = cv2.matchTemplate(s, templ, cv2.TM_CCOEFF_NORMED)
-        match_v = cv2.matchTemplate(v, templ, cv2.TM_CCOEFF_NORMED)
-        (minVal_h, maxVal_h, minLoc_h, maxLoc_h) = cv2.minMaxLoc(match_h)
-        (minVal_s, maxVal_s, minLoc_s, maxLoc_s) = cv2.minMaxLoc(match_s)
-        (minVal_v, maxVal_v, minLoc_v, maxLoc_v) = cv2.minMaxLoc(match_v)
-        # match_comb = np.concatenate((match_h, match_s, match_v), axis=1)  # Combine 3 images
-        # cv2.imshow("Split Matches", match_comb)
+            if len(templ.shape) > 2:
+                templ = cv2.cvtColor(templ, cv2.COLOR_BGR2GRAY)
 
-        # Get best result
-        # V is likely the best match, so check it first
-        if maxVal_v > maxVal_s and maxVal_v > maxVal_h:
-            return image, (minVal_v, maxVal_v, minLoc_v, maxLoc_v), match_v
-        # S is likely the 2nd best match, so check it
-        if maxVal_s > maxVal_h:
-            return image, (minVal_s, maxVal_s, minLoc_s, maxLoc_s), match_s
-        # H must be the best match
-        return image, (minVal_h, maxVal_h, minLoc_h, maxLoc_h), match_h
+            vpi_templ = vpi.asimage(templ)
+
+            with vpi.Backend.CUDA:
+                for name, channel_img in channels.items():
+                    vpi_channel = vpi.asimage(channel_img)
+                    match_result = vpi.templateMatching(vpi_channel, vpi_templ, method='TM_CCOEFF_NORMED')
+                    min_val, max_val, min_loc, max_loc = match_result.minmaxloc()
+                    results[name] = (min_val, max_val, min_loc, max_loc)
+
+            (minVal_h, maxVal_h, minLoc_h, maxLoc_h) = results['h']
+            (minVal_s, maxVal_s, minLoc_s, maxLoc_s) = results['s']
+            (minVal_v, maxVal_v, minLoc_v, maxLoc_v) = results['v']
+
+            if maxVal_v > maxVal_s and maxVal_v > maxVal_h:
+                return image, (minVal_v, maxVal_v, minLoc_v, maxLoc_v), None
+            if maxVal_s > maxVal_h:
+                return image, (minVal_s, maxVal_s, minLoc_s, maxLoc_s), None
+            return image, (minVal_h, maxVal_h, minLoc_h, maxLoc_h), None
+
+        else:
+            # Original CPU path
+            img_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+            h, s, v = cv2.split(img_hsv)
+
+            match_h = cv2.matchTemplate(h, templ, cv2.TM_CCOEFF_NORMED)
+            match_s = cv2.matchTemplate(s, templ, cv2.TM_CCOEFF_NORMED)
+            match_v = cv2.matchTemplate(v, templ, cv2.TM_CCOEFF_NORMED)
+            (minVal_h, maxVal_h, minLoc_h, maxLoc_h) = cv2.minMaxLoc(match_h)
+            (minVal_s, maxVal_s, minLoc_s, maxLoc_s) = cv2.minMaxLoc(match_s)
+            (minVal_v, maxVal_v, minLoc_v, maxLoc_v) = cv2.minMaxLoc(match_v)
+
+            if maxVal_v > maxVal_s and maxVal_v > maxVal_h:
+                return image, (minVal_v, maxVal_v, minLoc_v, maxLoc_v), match_v
+            if maxVal_s > maxVal_h:
+                return image, (minVal_s, maxVal_s, minLoc_s, maxLoc_s), match_s
+            return image, (minVal_h, maxVal_h, minLoc_h, maxLoc_h), match_h
 
     def equalize(self, image=None, noOp=None):
         # Load the image in greyscale
