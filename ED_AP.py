@@ -2146,6 +2146,7 @@ class EDAutopilot:
             if interdicted:
                 # Continue journey after interdiction
                 self.keys.send('SetSpeed50')
+                self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)  # Wait to get back into supercruise
                 self.nav_align(scr_reg)  # realign with station
 
             # check for SC Disengage
