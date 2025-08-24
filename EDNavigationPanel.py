@@ -234,6 +234,53 @@ class EDNavigationPanel:
             self.keys.send('CyclePreviousPanel', repeat=1)
             return True
 
+    def _find_item_in_list(self, item_name, list_region, scl_row_w, scl_row_h):
+        """
+        Finds an item in a list using the "intelligent scroll" method.
+        """
+        self.keys.send('UI_Down')
+        sleep(0.1)
+
+        # Go to top of list
+        last_text = ""
+        self.keys.send('UI_Up', state=1)
+        for _ in range(100):  # Max 10 seconds
+            sleep(0.1)
+            image = self.ocr.capture_region_pct(list_region)
+            _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, scl_row_w, scl_row_h)
+            current_text = str(ocr_textlist)
+
+            if last_text == current_text:
+                break
+            last_text = current_text
+        self.keys.send('UI_Up', state=0)
+        sleep(0.1)
+
+        # Find item in the list
+        item_found = False
+        for _ in range(40):  # Max 40 scrolls
+            image = self.ocr.capture_region_pct(list_region)
+            _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, scl_row_w, scl_row_h)
+
+            if self.ap.debug_overlay:
+                abs_rect = self.screen.screen_rect_to_abs(list_region['rect'])
+                self.ap.overlay.overlay_floating_text('nav_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25,
+                                                      (0, 255, 0))
+                self.ap.overlay.overlay_paint()
+
+            if ocr_textlist is not None and item_name.upper() in str(ocr_textlist).upper():
+                item_found = True
+                break
+
+            self.keys.send('UI_Down')  # Scroll down
+
+        if self.ap.debug_overlay:
+            sleep(1)
+            self.ap.overlay.overlay_remove_floating_text('nav_list_text')
+            self.ap.overlay.overlay_paint()
+
+        return item_found
+
     def select_station_by_ocr(self, station_name) -> bool:
         """ Try to select a station from the navigation panel using OCR.
         """
@@ -259,31 +306,7 @@ class EDNavigationPanel:
                                                       self.screen.screen_width, self.screen.screen_height)
 
         # Find station in the list
-        station_found = False
-        self.keys.send('UI_Down')
-        sleep(0.2)
-        self.keys.send('UI_Up', hold=3) # Go to top of list
-        sleep(0.2)
-        for _ in range(40): # Max 40 scrolls
-            image = self.ocr.capture_region_pct(nav_list_region)
-            img_selected, ocr_data, ocr_textlist = self.ocr.get_highlighted_item_data(image, scl_row_w, scl_row_h)
-
-            if self.ap.debug_overlay:
-                self.ap.overlay.overlay_floating_text('nav_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
-                self.ap.overlay.overlay_paint()
-
-            if img_selected is not None and station_name.upper() in str(ocr_textlist).upper():
-                station_found = True
-                break
-
-            self.keys.send('UI_Down') # Scroll down
-            sleep(0.05)
-
-        if self.ap.debug_overlay:
-            sleep(1)
-            self.ap.overlay.overlay_remove_rect('nav_list')
-            self.ap.overlay.overlay_remove_floating_text('nav_list_text')
-            self.ap.overlay.overlay_paint()
+        station_found = self._find_item_in_list(station_name, nav_list_region, scl_row_w, scl_row_h)
 
         if not station_found:
             logger.error(f"Could not find station {station_name} in navigation panel.")

@@ -221,6 +221,57 @@ class EDStationServicesInShip:
 
         return True
 
+    def _find_item_in_list(self, item_name, list_region, min_w, min_h, keys):
+        """
+        Finds an item in a list using the "intelligent scroll" method.
+        """
+
+        # Go to top of list
+        last_text = ""
+        keys.send('UI_Up', state=1)
+        for _ in range(100):  # Max 10 seconds
+            sleep(0.1)
+            image = self.ocr.capture_region_pct(list_region)
+            _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+            current_text = str(ocr_textlist)
+
+            if last_text == current_text:
+                break
+            last_text = current_text
+        keys.send('UI_Up', state=0)
+        sleep(0.1)
+
+        # Find item in the list
+        item_found = False
+        in_list = False
+        for _ in range(100):  # Max 100 scrolls, to be safe
+            image = self.ocr.capture_region_pct(list_region)
+            img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+
+            if self.ap.debug_overlay:
+                abs_rect = self.screen.screen_rect_to_abs(list_region['rect'])
+                self.ap.overlay.overlay_floating_text('commodities_list_text', f'{ocr_textlist}', abs_rect[0],
+                                                      abs_rect[1] - 25, (0, 255, 0))
+                self.ap.overlay.overlay_paint()
+
+            if ocr_textlist and item_name.upper() in str(ocr_textlist).upper():
+                item_found = True
+                break
+
+            if img_selected is None and in_list:
+                # End of list
+                break
+
+            in_list = True
+            keys.send('UI_Down')
+
+        if self.ap.debug_overlay:
+            sleep(1)
+            self.ap.overlay.overlay_remove_floating_text('commodities_list_text')
+            self.ap.overlay.overlay_paint()
+
+        return item_found
+
     def buy_commodity(self, keys, name: str, qty: int, free_cargo: int) -> tuple[bool, int]:
         """ Buy qty of commodity. If qty >= 9999 then buy as much as possible.
         Assumed to be in the commodities buy screen in the list. """
@@ -264,48 +315,11 @@ class EDStationServicesInShip:
         if buyable_items is None:
             return False, 0
 
-        # Go to top of list
-        keys.send('UI_Up', hold=3.0)
-        sleep(0.5)
-
         # Find item in list with OCR
-        found_on_screen = False
         scl_reg = reg_scale_for_station(self.reg['commodities_list'], self.screen.screen_width,
                                         self.screen.screen_height)
         min_w, min_h = size_scale_for_station(self.commodity_item_size['width'], self.commodity_item_size['height'], self.screen.screen_width, self.screen.screen_height)
-
-        # Loop to find the item
-        in_list = False
-        abs_rect = self.screen.screen_rect_to_abs(scl_reg['rect'])
-        if self.ap.debug_overlay:
-            self.ap.overlay.overlay_rect1('commodities_list', abs_rect, (0, 255, 0), 2)
-            self.ap.overlay.overlay_paint()
-
-        for _ in range(len(buyable_items) + 5):
-            img = self.ocr.capture_region_pct(scl_reg)
-            img_selected, ocr_data, ocr_textlist = self.ocr.get_highlighted_item_data(img, min_w, min_h)
-
-            if self.ap.debug_overlay:
-                self.ap.overlay.overlay_floating_text('commodities_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
-                self.ap.overlay.overlay_paint()
-
-            if ocr_textlist and name.upper() in str(ocr_textlist).upper():
-                found_on_screen = True
-                break
-            
-            if img_selected is None and in_list:
-                # End of list
-                break
-
-            in_list = True
-            keys.send('UI_Down')
-            sleep(0.2)
-
-        if self.ap.debug_overlay:
-            sleep(1)
-            self.ap.overlay.overlay_remove_rect('commodities_list')
-            self.ap.overlay.overlay_remove_floating_text('commodities_list_text')
-            self.ap.overlay.overlay_paint()
+        found_on_screen = self._find_item_in_list(name, scl_reg, min_w, min_h, keys)
 
         if not found_on_screen:
             self.ap_ckb('log+vce', f"Could not find '{name}' on screen in the market.")
@@ -364,48 +378,11 @@ class EDStationServicesInShip:
         # But maybe not at all stations!
         act_qty = qty
 
-        # Go to top of list
-        keys.send('UI_Up', hold=3.0)
-        sleep(0.5)
-
         # Find item in list with OCR
-        found_on_screen = False
         scl_reg = reg_scale_for_station(self.reg['commodities_list'], self.screen.screen_width,
                                         self.screen.screen_height)
         min_w, min_h = size_scale_for_station(self.commodity_item_size['width'], self.commodity_item_size['height'], self.screen.screen_width, self.screen.screen_height)
-
-        # Loop to find the item
-        in_list = False
-        abs_rect = self.screen.screen_rect_to_abs(scl_reg['rect'])
-        if self.ap.debug_overlay:
-            self.ap.overlay.overlay_rect1('commodities_list', abs_rect, (0, 255, 0), 2)
-            self.ap.overlay.overlay_paint()
-
-        for _ in range(len(sellable_items) + 5):
-            img = self.ocr.capture_region_pct(scl_reg)
-            img_selected, ocr_data, ocr_textlist = self.ocr.get_highlighted_item_data(img, min_w, min_h)
-
-            if self.ap.debug_overlay:
-                self.ap.overlay.overlay_floating_text('commodities_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
-                self.ap.overlay.overlay_paint()
-
-            if ocr_textlist and name.upper() in str(ocr_textlist).upper():
-                found_on_screen = True
-                break
-            
-            if img_selected is None and in_list:
-                # End of list
-                break
-
-            in_list = True
-            keys.send('UI_Down')
-            sleep(0.2)
-
-        if self.ap.debug_overlay:
-            sleep(1)
-            self.ap.overlay.overlay_remove_rect('commodities_list')
-            self.ap.overlay.overlay_remove_floating_text('commodities_list_text')
-            self.ap.overlay.overlay_paint()
+        found_on_screen = self._find_item_in_list(name, scl_reg, min_w, min_h, keys)
 
         if not found_on_screen:
             self.ap_ckb('log+vce', f"Could not find '{name}' on screen in the market.")
