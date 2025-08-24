@@ -171,7 +171,10 @@ class APGui():
             'Calibrate': "Will iterate through a set of scaling values \ngetting the best match for your system. \nSee HOWTO-Calibrate.md",
             'Waypoint List Button': "Read in a file with with your Waypoints.",
             'Cap Mouse XY': "This will provide the StationCoord value of the Station in the SystemMap. \nSelecting this button and then clicking on the Station in the SystemMap \nwill return the x,y value that can be pasted in the waypoints file",
-            'Reset Waypoint List': "Reset your waypoint list, \nthe waypoint assist will start again at the first point in the list."
+            'Reset Waypoint List': "Reset your waypoint list, \nthe waypoint assist will start again at the first point in the list.",
+            'Auto-Dock Boost': "Enable boosting when disengaging from supercruise for docking.",
+            'Auto-Dock Fwd Time': "Time in seconds to move forward after disengaging before attempting to dock.",
+            'Auto-Dock Delay': "Time in seconds to wait after moving forward before requesting docking."
         }
 
         self.gui_loaded = False
@@ -388,6 +391,11 @@ class APGui():
         self.entries['ship']['RollRate'].insert(0, self.ed_ap.rollrate)
         self.entries['ship']['YawRate'].insert(0, self.ed_ap.yawrate)
         self.entries['ship']['SunPitchUp+Time'].insert(0, self.ed_ap.sunpitchuptime)
+        self.checkboxvar['AutoDockBoost'].set(self.ed_ap.autodock_boost)
+        self.entries['ship']['AutoDockForwardTime'].delete(0, tk.END)
+        self.entries['ship']['AutoDockForwardTime'].insert(0, self.ed_ap.autodock_forward_time)
+        self.entries['ship']['AutoDockDelayTime'].delete(0, tk.END)
+        self.entries['ship']['AutoDockDelayTime'].insert(0, self.ed_ap.autodock_delay_time)
 
     def calibrate_callback(self):
         self.ed_ap.calibrate_target()
@@ -621,6 +629,8 @@ class APGui():
             self.ed_ap.rollrate = float(self.entries['ship']['RollRate'].get())
             self.ed_ap.yawrate = float(self.entries['ship']['YawRate'].get())
             self.ed_ap.sunpitchuptime = float(self.entries['ship']['SunPitchUp+Time'].get())
+            self.ed_ap.autodock_forward_time = int(self.entries['ship']['AutoDockForwardTime'].get())
+            self.ed_ap.autodock_delay_time = int(self.entries['ship']['AutoDockDelayTime'].get())
 
             self.ed_ap.config['SunBrightThreshold'] = int(self.entries['autopilot']['Sun Bright Threshold'].get())
             self.ed_ap.config['NavAlignTries'] = int(self.entries['autopilot']['Nav Align Tries'].get())
@@ -843,6 +853,9 @@ class APGui():
                 self.ed_ap.debug_overlay = True
             else:
                 self.ed_ap.debug_overlay = False
+
+        if field == 'AutoDockBoost':
+            self.ed_ap.autodock_boost = self.checkboxvar['AutoDockBoost'].get()
 
         if field == 'CUDA OCR':
             self.ocr_calibration_data['use_gpu_ocr'] = self.checkboxvar['CUDA OCR'].get()
@@ -1262,12 +1275,38 @@ class APGui():
         spn_sun_pitch_up.bind('<FocusOut>', self.entry_update)
         self.entries['ship']['SunPitchUp+Time'] = spn_sun_pitch_up
 
+        # Separator
+        sep = ttk.Separator(blk_ship, orient='horizontal')
+        sep.grid(row=4, column=0, columnspan=2, sticky='ew', pady=5)
+
+        # Auto-Docking settings
+        self.checkboxvar['AutoDockBoost'] = tk.BooleanVar()
+        cb_auto_dock_boost = ttk.Checkbutton(blk_ship, text='Auto-Dock Boost', variable=self.checkboxvar['AutoDockBoost'], command=(lambda field='AutoDockBoost': self.check_cb(field)))
+        cb_auto_dock_boost.grid(row=5, column=0, columnspan=2, sticky=tk.W)
+        ToolTip(cb_auto_dock_boost, msg=self.tooltips['Auto-Dock Boost'], delay=1.0, bg="#808080", fg="#FFFFFF")
+
+        lbl_fwd_time = ttk.Label(blk_ship, text='Auto-Dock Fwd Time:')
+        lbl_fwd_time.grid(row=6, column=0, pady=3, sticky=tk.W)
+        spn_fwd_time = ttk.Spinbox(blk_ship, width=10, from_=0, to=60, increment=1, justify=tk.RIGHT)
+        spn_fwd_time.grid(row=6, column=1, padx=2, pady=2, sticky=tk.E)
+        spn_fwd_time.bind('<FocusOut>', self.entry_update)
+        self.entries['ship']['AutoDockForwardTime'] = spn_fwd_time
+        ToolTip(lbl_fwd_time, msg=self.tooltips['Auto-Dock Fwd Time'], delay=1.0, bg="#808080", fg="#FFFFFF")
+
+        lbl_delay_time = ttk.Label(blk_ship, text='Auto-Dock Delay:')
+        lbl_delay_time.grid(row=7, column=0, pady=3, sticky=tk.W)
+        spn_delay_time = ttk.Spinbox(blk_ship, width=10, from_=0, to=60, increment=1, justify=tk.RIGHT)
+        spn_delay_time.grid(row=7, column=1, padx=2, pady=2, sticky=tk.E)
+        spn_delay_time.bind('<FocusOut>', self.entry_update)
+        self.entries['ship']['AutoDockDelayTime'] = spn_delay_time
+        ToolTip(lbl_delay_time, msg=self.tooltips['Auto-Dock Delay'], delay=1.0, bg="#808080", fg="#FFFFFF")
+
         btn_tst_roll = ttk.Button(blk_ship, text='Test Roll Rate', command=self.ship_tst_roll)
-        btn_tst_roll.grid(row=4, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
+        btn_tst_roll.grid(row=8, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
         btn_tst_pitch = ttk.Button(blk_ship, text='Test Pitch Rate', command=self.ship_tst_pitch)
-        btn_tst_pitch.grid(row=5, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
+        btn_tst_pitch.grid(row=9, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
         btn_tst_yaw = ttk.Button(blk_ship, text='Test Yaw Rate', command=self.ship_tst_yaw)
-        btn_tst_yaw.grid(row=6, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
+        btn_tst_yaw.grid(row=10, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
 
         # waypoints button block
         blk_wp_buttons = ttk.LabelFrame(page0, text="Waypoints", padding=(10, 5))

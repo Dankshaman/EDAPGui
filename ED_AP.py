@@ -248,6 +248,9 @@ class EDAutopilot:
         self.rollrate  = 80.0
         self.pitchrate = 33.0
         self.sunpitchuptime = 0.0
+        self.autodock_boost = False
+        self.autodock_forward_time = 2
+        self.autodock_delay_time = 12
 
         self.jump_cnt = 0
         self.total_dist_jumped = 0
@@ -334,6 +337,9 @@ class EDAutopilot:
             self.ship_configs['Ship_Configs'][self.current_ship_type]['RollRate'] = self.rollrate
             self.ship_configs['Ship_Configs'][self.current_ship_type]['YawRate'] = self.yawrate
             self.ship_configs['Ship_Configs'][self.current_ship_type]['SunPitchUp+Time'] = self.sunpitchuptime
+            self.ship_configs['Ship_Configs'][self.current_ship_type]['AutoDockBoost'] = self.autodock_boost
+            self.ship_configs['Ship_Configs'][self.current_ship_type]['AutoDockForwardTime'] = self.autodock_forward_time
+            self.ship_configs['Ship_Configs'][self.current_ship_type]['AutoDockDelayTime'] = self.autodock_delay_time
 
             self.write_ship_configs(self.ship_configs)
             logger.debug(f"Saved ship config for: {self.current_ship_type}")
@@ -356,13 +362,16 @@ class EDAutopilot:
         if ship_type in self.ship_configs['Ship_Configs']:
             current_ship_cfg = self.ship_configs['Ship_Configs'][ship_type]
             # Check if the custom config has actual values (not just empty dict)
-            if any(key in current_ship_cfg for key in ['compass_scale', 'RollRate', 'PitchRate', 'YawRate', 'SunPitchUp+Time']):
+            if any(key in current_ship_cfg for key in ['compass_scale', 'RollRate', 'PitchRate', 'YawRate', 'SunPitchUp+Time', 'AutoDockBoost', 'AutoDockForwardTime', 'AutoDockDelayTime']):
                 # Use custom configuration - this means it's been modified and saved to ship_configs.json
                 self.compass_scale = current_ship_cfg.get('compass_scale', self.scr.scaleX)
                 self.rollrate = current_ship_cfg.get('RollRate', 80.0)
                 self.pitchrate = current_ship_cfg.get('PitchRate', 33.0)
                 self.yawrate = current_ship_cfg.get('YawRate', 8.0)
                 self.sunpitchuptime = current_ship_cfg.get('SunPitchUp+Time', 0.0)
+                self.autodock_boost = current_ship_cfg.get('AutoDockBoost', False)
+                self.autodock_forward_time = current_ship_cfg.get('AutoDockForwardTime', 2)
+                self.autodock_delay_time = current_ship_cfg.get('AutoDockDelayTime', 12)
                 logger.info(f"Loaded your custom configuration for {ship_type} from ship_configs.json")
                 return
         
@@ -375,6 +384,9 @@ class EDAutopilot:
             self.pitchrate = ship_defaults.get('PitchRate', 33.0)
             self.yawrate = ship_defaults.get('YawRate', 8.0)
             self.sunpitchuptime = ship_defaults.get('SunPitchUp+Time', 0.0)
+            self.autodock_boost = ship_defaults.get('AutoDockBoost', False)
+            self.autodock_forward_time = ship_defaults.get('AutoDockForwardTime', 2)
+            self.autodock_delay_time = ship_defaults.get('AutoDockDelayTime', 12)
             logger.info(f"Loaded default configuration for {ship_type} from default ship cfg file")
             return
 
@@ -384,6 +396,9 @@ class EDAutopilot:
         self.pitchrate = 33.0
         self.yawrate = 8.0
         self.sunpitchuptime = 0.0
+        self.autodock_boost = False
+        self.autodock_forward_time = 2
+        self.autodock_delay_time = 12
         logger.info(f"Using hardcoded default configuration for {ship_type}")
         
         # Add empty entry to ship_configs for future customization
@@ -1166,8 +1181,9 @@ class EDAutopilot:
         if self.jn.ship_state()['status'] != "in_space":
             logger.error('In dock(), after wait, but still not in_space')
 
-        sleep(2)  # wait 5 seconds to get to 7.5km to request docking
-        self.keys.send('UseBoostJuice')
+        sleep(self.autodock_forward_time)  # wait 5 seconds to get to 7.5km to request docking
+        if self.autodock_boost:
+            self.keys.send('UseBoostJuice')
         self.keys.send('SetSpeedZero')
 
         if self.jn.ship_state()['status'] != "in_space":
@@ -1175,7 +1191,7 @@ class EDAutopilot:
             logger.error('In dock(), after long wait, but still not in_space')
             raise Exception('Docking failed (not in space)')
 
-        sleep(12)
+        sleep(self.autodock_delay_time)
         # At this point (of sleep()) we should be < 7.5km from the station.  Go 0 speed
         # if we get docking granted ED's docking computer will take over
         self.keys.send('SetSpeedZero', repeat=2)
@@ -1845,9 +1861,9 @@ class EDAutopilot:
                     # Start SCO monitoring
                     self.start_sco_monitoring()
 
-                    # Wait the configured time before continuing
-                    self.ap_ckb('log', 'Flying for configured FC departure time.')
-                    sleep(self.config['FCDepartureTime'])
+                    # Wait for SC
+                    res = self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
+                    sleep(0.5)
                     self.keys.send('SetSpeed50')
 
                 if not fleet_carrier:
@@ -1864,9 +1880,9 @@ class EDAutopilot:
                     # Start SCO monitoring
                     self.start_sco_monitoring()
 
-                    # Wait the configured time before continuing
-                    self.ap_ckb('log', 'Flying for configured FC departure time.')
-                    sleep(self.config['FCDepartureTime'])
+                    # Wait for SC
+                    res = self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
+                    sleep(0.5)
                     self.keys.send('SetSpeed50')
 
         elif on_planet:
@@ -1930,8 +1946,8 @@ class EDAutopilot:
         self.keys.send('Supercruise', hold=0.001)
         # Start SCO monitoring
         self.start_sco_monitoring()
-        # TODO - check if we actually go into supercruise
-        sleep(12)
+        res = self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
+        sleep(0.5)
 
         self.keys.send('SetSpeed50')
 
