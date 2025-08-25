@@ -3,6 +3,7 @@ import traceback
 from enum import Enum
 from math import atan, degrees
 import random
+import time
 from tkinter import messagebox
 
 import cv2
@@ -1175,21 +1176,18 @@ class EDAutopilot:
         will wait a configurable time for dock.  Perform Refueling and Repair.
         """
         # if not in normal space, give a few more sections as at times it will take a little bit
-        if self.jn.ship_state()['status'] != "in_space":
-            sleep(3)  # sleep a little longer
-
-        if self.jn.ship_state()['status'] != "in_space":
-            logger.error('In dock(), after wait, but still not in_space')
+        starttime = time.time()
+        while self.jn.ship_state()['status'] != 'in_space':
+            sleep(1)
+            if ((time.time() - starttime) > 30):
+                self.keys.send('SetSpeedZero')
+                logger.error('In dock(), after long wait, but still not in_space')
+                raise Exception('Docking failed (not in space)')
 
         sleep(self.autodock_forward_time)  # wait 5 seconds to get to 7.5km to request docking
         if self.autodock_boost:
             self.keys.send('UseBoostJuice')
         self.keys.send('SetSpeedZero')
-
-        if self.jn.ship_state()['status'] != "in_space":
-            self.keys.send('SetSpeedZero')
-            logger.error('In dock(), after long wait, but still not in_space')
-            raise Exception('Docking failed (not in space)')
 
         sleep(self.autodock_delay_time)
         # At this point (of sleep()) we should be < 7.5km from the station.  Go 0 speed
