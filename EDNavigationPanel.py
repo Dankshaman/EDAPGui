@@ -277,6 +277,7 @@ class EDNavigationPanel:
         if self.ap.debug_overlay:
             sleep(1)
             self.ap.overlay.overlay_remove_floating_text('nav_list_text')
+            self.ap.overlay.overlay_remove_rect('nav_panel_active')
             self.ap.overlay.overlay_paint()
 
         return item_found
