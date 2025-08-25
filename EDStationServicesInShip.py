@@ -3,6 +3,7 @@ from __future__ import annotations
 import cv2
 import json
 import os
+import re
 import ED_AP
 from MarketParser import MarketParser
 from OCR import OCR
@@ -140,7 +141,24 @@ class EDStationServicesInShip:
         Sets the quantity of an item using OCR verification.
         Assumes the UI is on the buy/sell panel.
         """
-        sleep(0.5)  # give time to popup
+        # Wait for the buy/sell panel to appear
+        start_time = time()
+        panel_found = False
+        min_w, min_h = size_scale_for_station(self.commodity_item_size['width'], self.commodity_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+        while time() - start_time < 10:
+            image = self.ocr.capture_region_pct(self.reg['commodities_list'])
+            _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+            if ocr_textlist:
+                ocr_string = str(ocr_textlist).upper()
+                if "BUY" in ocr_string or "SELL" in ocr_string or re.search(r'\d', ocr_string):
+                    panel_found = True
+                    break
+            sleep(0.2)
+
+        if not panel_found:
+            self.ap_ckb('log+vce', f"Error: Timed out waiting for buy/sell panel to appear for {name}.")
+            return False
+
         keys.send('UI_Up', repeat=2)  # go up to quantity
 
         scl_reg_qty = reg_scale_for_station(self.reg['commodity_quantity'], self.screen.screen_width,
