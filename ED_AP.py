@@ -1301,7 +1301,7 @@ class EDAutopilot:
         """ Use the compass to find the nav point position.  Will then perform rotation and pitching
         to put the nav point in the middle of the compass, i.e. target right in front of us """
 
-        close = 10  # in degrees
+        close = 3  # in degrees
         if not (self.jn.ship_state()['status'] == 'in_supercruise' or self.jn.ship_state()['status'] == 'in_space'):
             logger.error('align=err1, nav_align not in super or space')
             raise Exception('nav_align not in super or space')
@@ -1376,7 +1376,7 @@ class EDAutopilot:
 
         logger.debug('align= fine align')
 
-        close = 50
+        close = 25
 
         # TODO: should use Pitch Rates to calculate, but this seems to work fine with all ships
         hold_pitch = 0.150
