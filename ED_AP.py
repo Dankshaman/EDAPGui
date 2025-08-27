@@ -52,12 +52,6 @@ class EDAP_Interrupt(Exception):
     pass
 
 
-class ScTargetAlignReturn(Enum):
-    Lost = 1
-    Found = 2
-    Disengage = 3
-
-
 class EDAutopilot:
 
     def __init__(self, cb, use_gpu_ocr=False, doThread=True):
@@ -1450,98 +1444,127 @@ class EDAutopilot:
 
         self.fsd_target_align(scr_reg)
 
-    def sc_target_align(self, scr_reg) -> ScTargetAlignReturn:
-        """ Stays tight on the target, monitors for disengage and obscured.
-        If target could not be found, return false.
-        @param scr_reg: The screen region class.
-        @return: A string detailing the reason for the method return. Current return options:
-            'lost': Lost target
-            'found': Target found
-            'disengage': Disengage text found
+    def smart_sleep(self, duration, scr_reg):
+        """ Sleeps for a given duration, but wakes up periodically to check for critical events.
+        Returns True if the sleep was completed, False if it was interrupted by an event.
         """
+        steps = int(duration / 0.05)
+        if steps < 1:
+            steps = 1
 
-        close = 6
-        off = None
-
-        hold_pitch = 0.100
-        hold_yaw = 0.100
-        for i in range(5):
-            new = self.get_destination_offset(scr_reg)
-            if new:
-                off = new
-                break
+        for _ in range(steps):
+            sleep(0.05)
+            if self.interdiction_check():
+                return False
+            if self.sc_disengage_label_up(scr_reg):
+                if self.sc_disengage_active(scr_reg):
+                    return False
             if self.is_destination_occluded(scr_reg):
-                self.occluded_reposition(scr_reg)
-                self.ap_ckb('log+vce', 'Target Align')
-            sleep(0.1)
+                return False
+        return True
 
-        # Could not be found, return
-        if off is None:
-            logger.debug("sc_target_align not finding target")
-            self.ap_ckb('log', 'Target not found, terminating SC Assist')
-            return ScTargetAlignReturn.Lost
+    def sc_align(self, scr_reg) -> bool:
+        """ A unified alignment function for supercruise, mimicking old timing but with constant event checking.
+        """
+        close_enough_for_target_align = 5
+        nav_close = 3
+        target_close = 6
 
-        #logger.debug("sc_target_align x: "+str(off['x'])+" y:"+str(off['y']))
+        while True:
+            # Check ship status first
+            if self.jn.ship_state()['status'] != 'in_supercruise':
+                if self.status.get_flag2(Flags2GlideMode):
+                    logger.debug("Gliding")
+                    self.status.wait_for_flag2_off(Flags2GlideMode, 30)
+                    return True  # Success
+                else:
+                    logger.debug("No longer in supercruise")
+                    return False  # Failure
 
-        while (abs(off['x']) > close) or \
-                (abs(off['y']) > close):
+            # Always check for critical events at the start of the loop
+            if self.interdiction_check():
+                self.keys.send('SetSpeed50')
+                self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
+                continue  # Restart loop to re-evaluate
 
-            if abs(off['x']) > 25:
-                hold_yaw = 0.2
-            else:
-                hold_yaw = 0.09
-
-            if abs(off['y']) > 25:
-                hold_pitch = 0.15
-            else:
-                hold_pitch = 0.075
-
-            #logger.debug("  sc_target_align x: "+str(off['x'])+" y:"+str(off['y']))
-
-            if off['x'] > close:
-                self.keys.send('YawRightButton', hold=hold_yaw)
-            if off['x'] < -close:
-                self.keys.send('YawLeftButton', hold=hold_yaw)
-            if off['y'] > close:
-                self.keys.send('PitchUpButton', hold=hold_pitch)
-            if off['y'] < -close:
-                self.keys.send('PitchDownButton', hold=hold_pitch)
-
-            sleep(.02)  # time for image to catch up
-
-            # this checks if suddenly the target show up behind the planet
-            if self.is_destination_occluded(scr_reg):
-                self.occluded_reposition(scr_reg)
-                self.ap_ckb('log+vce', 'Target Align')
-
-            # check for SC Disengage
             if self.sc_disengage_label_up(scr_reg):
                 if self.sc_disengage_active(scr_reg):
                     self.ap_ckb('log+vce', 'Disengage Supercruise')
                     self.keys.send('HyperSuperCombination')
                     self.stop_sco_monitoring()
-                    return ScTargetAlignReturn.Disengage
+                    return True  # Success
 
-            new = self.get_destination_offset(scr_reg)
-            if new:
-                off = new
+            if self.is_destination_occluded(scr_reg):
+                self.occluded_reposition(scr_reg)
+                continue  # Restart loop to re-evaluate
 
-            # Check if target is outside the target region (behind us) and break loop
-            if new is None:
-                logger.debug("sc_target_align lost target")
-                self.ap_ckb('log', 'Target lost, attempting re-alignment.')
-                return ScTargetAlignReturn.Lost
+            # Check for compass visibility before proceeding
+            if not self.have_destination(scr_reg):
+                logger.debug("Compass not found, cannot align.")
+                sleep(1)
+                continue
 
-        # TODO - find a better way to clear these
-        if self.debug_overlay:
-            sleep(2)
-            # self.overlay.overlay_remove_rect('sc_disengage_label_up')
-            # self.overlay.overlay_remove_floating_text('sc_disengage_label_up')
-            self.overlay.overlay_remove_rect('sc_disengage_active')
-            self.overlay.overlay_remove_floating_text('sc_disengage_active')
-            self.overlay.overlay_paint()
+            # Get sensor data
+            nav_offset = self.get_nav_offset(scr_reg)
+            target_offset = self.get_destination_offset(scr_reg)
 
-        return ScTargetAlignReturn.Found
+            # Main alignment decision logic
+            use_target_align = target_offset and abs(nav_offset['yaw']) < close_enough_for_target_align and abs(
+                nav_offset['pit']) < close_enough_for_target_align
+
+            if use_target_align:
+                # Visual Target Alignment Logic
+                if (abs(target_offset['x']) > target_close) or (abs(target_offset['y']) > target_close):
+                    hold_yaw = 0.09
+                    if abs(target_offset['x']) > 25: hold_yaw = 0.2
+                    hold_pitch = 0.075
+                    if abs(target_offset['y']) > 25: hold_pitch = 0.15
+
+                    if target_offset['x'] > target_close: self.keys.send('YawRightButton', hold=hold_yaw)
+                    if target_offset['x'] < -target_close: self.keys.send('YawLeftButton', hold=hold_yaw)
+                    if target_offset['y'] > target_close: self.keys.send('PitchUpButton', hold=hold_pitch)
+                    if target_offset['y'] < -target_close: self.keys.send('PitchDownButton', hold=hold_pitch)
+
+                sleep_interrupted = not self.smart_sleep(0.02, scr_reg)
+                if sleep_interrupted:
+                    continue  # A critical event happened during the sleep
+
+            else:
+                # Compass Alignment Logic
+                if abs(nav_offset['yaw']) > nav_close or abs(nav_offset['pit']) > nav_close:
+                    sleep_duration = 0.5
+                    # Roll
+                    if abs(nav_offset['roll']) > nav_close and (180 - abs(nav_offset['roll']) > nav_close):
+                        sleep_duration = 1.0  # Roll takes longer
+                        if nav_offset['yaw'] > 0 and nav_offset['pit'] > 0:
+                            self.rotateRight(nav_offset['roll'])
+                        elif nav_offset['yaw'] > 0 > nav_offset['pit']:
+                            self.rotateLeft(180 - nav_offset['roll'])
+                        elif nav_offset['yaw'] < 0 < nav_offset['pit']:
+                            self.rotateLeft(-nav_offset['roll'])
+                        else:
+                            self.rotateRight(180 + nav_offset['roll'])
+                    # Pitch
+                    elif abs(nav_offset['pit']) > nav_close:
+                        if nav_offset['pit'] < 0:
+                            self.pitchDown(abs(nav_offset['pit']))
+                        else:
+                            self.pitchUp(abs(nav_offset['pit']))
+                    # Yaw
+                    elif abs(nav_offset['yaw']) > nav_close:
+                        if nav_offset['yaw'] < 0:
+                            self.yawLeft(abs(nav_offset['yaw']))
+                        else:
+                            self.yawRight(abs(nav_offset['yaw']))
+
+                    sleep_interrupted = not self.smart_sleep(sleep_duration, scr_reg)
+                    if sleep_interrupted:
+                        continue  # A critical event happened
+                else:
+                    # Aligned via compass, but no target. Just wait.
+                    sleep_interrupted = not self.smart_sleep(0.1, scr_reg)
+                    if sleep_interrupted:
+                        continue
 
     def occluded_reposition(self, scr_reg):
         """ Reposition is use when the target is occluded by a planet or other.
@@ -1561,7 +1584,6 @@ class EDAutopilot:
         self.keys.send('SetSpeed50')
         sleep(5)
         self.pitchUp(90)
-        self.nav_align(scr_reg)
         self.keys.send('SetSpeed50')
 
     def honk(self):
@@ -2126,57 +2148,7 @@ class EDAutopilot:
 
         # Loop forever keeping tight align to target, until we get SC Disengage popup
         self.ap_ckb('log+vce', 'Target Align')
-        while True:
-            sleep(0.05)
-            if self.jn.ship_state()['status'] == 'in_supercruise':
-                # Align and stay on target. If false is returned, we have lost the target behind us.
-                align_res = self.sc_target_align(scr_reg)
-                if align_res == ScTargetAlignReturn.Lost:
-                    # Continue ahead before aligning to prevent us circling the target
-                    # self.keys.send('SetSpeed100')
-                    sleep(10)
-                    self.keys.send('SetSpeed50')
-                    self.nav_align(scr_reg)  # Compass Align
-
-                elif align_res == ScTargetAlignReturn.Found:
-                    pass
-
-                elif align_res == ScTargetAlignReturn.Disengage:
-                    break
-
-            elif self.status.get_flag2(Flags2GlideMode):
-                # Gliding - wait to complete
-                logger.debug("Gliding")
-                self.status.wait_for_flag2_off(Flags2GlideMode, 30)
-                break
-            else:
-                # if we dropped from SC, then we rammed into planet
-                logger.debug("No longer in supercruise")
-                align_failed = True
-                break
-
-            # check if we are being interdicted
-            interdicted = self.interdiction_check()
-            if interdicted:
-                # Continue journey after interdiction
-                self.keys.send('SetSpeed50')
-                self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)  # Wait to get back into supercruise
-                self.nav_align(scr_reg)  # realign with station
-
-            # check for SC Disengage
-            if self.sc_disengage_label_up(scr_reg):
-                if self.sc_disengage_active(scr_reg):
-                    self.ap_ckb('log+vce', 'Disengage Supercruise')
-                    self.keys.send('HyperSuperCombination')
-                    self.stop_sco_monitoring()
-                    break
-
-        # TODO - find a better way to clear these
-        if self.debug_overlay:
-            sleep(2)
-            self.overlay.overlay_remove_rect('sc_disengage_active')
-            self.overlay.overlay_remove_floating_text('sc_disengage_active')
-            self.overlay.overlay_paint()
+        align_failed = not self.sc_align(scr_reg)
 
         # if no error, we must have gotten disengage
         if not align_failed and do_docking:
