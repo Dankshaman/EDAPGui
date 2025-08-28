@@ -155,6 +155,7 @@ class InternalWaypoint:
         self.buy_commodities = []
         self.update_commodity_count = tk.BooleanVar()
         self.fleet_carrier_transfer = tk.BooleanVar()
+        self.sell_one_at_a_time = tk.BooleanVar()
         self.skip = tk.BooleanVar()
         self.completed = tk.BooleanVar()
         self.comment = tk.StringVar()
@@ -259,9 +260,11 @@ class WaypointEditorTab:
 
         # Checkboxes
         self.update_commodity_count_check = ttk.Checkbutton(station_options_frame, text="Update Commodity Count")
-        self.update_commodity_count_check.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+        self.update_commodity_count_check.grid(row=2, column=0, columnspan=1, padx=5, pady=5, sticky="w")
         self.fleet_carrier_transfer_check = ttk.Checkbutton(station_options_frame, text="Fleet Carrier Transfer")
-        self.fleet_carrier_transfer_check.grid(row=2, column=2, columnspan=2, padx=5, pady=5, sticky="w")
+        self.fleet_carrier_transfer_check.grid(row=2, column=1, columnspan=1, padx=5, pady=5, sticky="w")
+        self.sell_one_at_a_time_check = ttk.Checkbutton(station_options_frame, text="Sell One at a Time")
+        self.sell_one_at_a_time_check.grid(row=2, column=2, columnspan=2, padx=5, pady=5, sticky="w")
 
         # --- Buy/Sell Commodities ---
         buy_sell_frame = ttk.Frame(bottom_frame)
@@ -473,6 +476,7 @@ class WaypointEditorTab:
                 wp.system_bookmark_number.set(value.get('SystemBookmarkNumber', 0))
                 wp.update_commodity_count.set(value.get('UpdateCommodityCount', False))
                 wp.fleet_carrier_transfer.set(value.get('FleetCarrierTransfer', False))
+                wp.sell_one_at_a_time.set(value.get('SellOneAtATime', False))
                 wp.skip.set(value.get('Skip', False))
                 wp.completed.set(value.get('Completed', False))
                 wp.comment.set(value.get('Comment', ''))
@@ -494,6 +498,7 @@ class WaypointEditorTab:
                 'SystemBookmarkNumber': wp.system_bookmark_number.get(),
                 'UpdateCommodityCount': wp.update_commodity_count.get(),
                 'FleetCarrierTransfer': wp.fleet_carrier_transfer.get(),
+                'SellOneAtATime': wp.sell_one_at_a_time.get(),
                 'Skip': wp.skip.get(),
                 'Completed': wp.completed.get(),
                 'Comment': wp.comment.get(),
@@ -535,6 +540,7 @@ class WaypointEditorTab:
             self.system_bookmark_number_entry.config(textvariable=wp.system_bookmark_number)
             self.update_commodity_count_check.config(variable=wp.update_commodity_count)
             self.fleet_carrier_transfer_check.config(variable=wp.fleet_carrier_transfer)
+            self.sell_one_at_a_time_check.config(variable=wp.sell_one_at_a_time)
 
             # Update commodity lists
             self.update_commodity_list(wp.buy_commodities, self.buy_commodities_list)
