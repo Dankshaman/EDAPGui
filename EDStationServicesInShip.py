@@ -158,6 +158,7 @@ class EDStationServicesInShip:
         
         if not panel_found:
             self.ap_ckb('log+vce', f"Error: Timed out waiting for buy/sell panel to appear for {name}.")
+            keys.send('UI_Back')
             return False
 
         keys.send('UI_Up', repeat=2)  # go up to quantity
