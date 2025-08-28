@@ -1364,73 +1364,89 @@ class EDAutopilot:
             logger.debug("final x:"+str(off['x'])+" y:"+str(off['y']))
 
     def fsd_target_align(self, scr_reg):
-        """ Coarse align to the target to support FSD jumping """
-
+        """ A unified alignment function for FSD jumps.
+        """
         self.vce.say("Target Align")
+        logger.debug('align= fsd_target_align')
 
-        logger.debug('align= fine align')
+        close_enough_for_target_align = 5
+        nav_close = 3
+        target_close = 6
 
-        close = 25
+        while True:
+            # Check for interdiction first
+            if self.interdiction_check():
+                self.keys.send('SetSpeed50')
+                self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
+                continue  # Restart alignment loop
 
-        # TODO: should use Pitch Rates to calculate, but this seems to work fine with all ships
-        hold_pitch = 0.150
-        hold_yaw = 0.300
-        new = None  # Initialize to avoid unbound variable
-        off = None  # Initialize to avoid unbound variable
-        
-        for i in range(5):
-            new = self.get_destination_offset(scr_reg)
-            if new:
-                off = new
-                break
-            sleep(0.25)
-
-        # try one more time to align
-        if new is None:
-            self.nav_align(scr_reg)
-            new = self.get_destination_offset(scr_reg)
-            if new:
-                off = new
-            else:
-                logger.debug('  out of fine -not off-'+'\n')
-                return
-        
-        # Safety check to ensure off is valid before using it
-        if off is None:
-            logger.debug('  off is None, cannot continue alignment')
-            return
-            
-        while (off['x'] > close) or \
-              (off['x'] < -close) or \
-              (off['y'] > close) or \
-              (off['y'] < -close):
-
-
-            #print("off:"+str(new))
-            if off['x'] > close:
-                self.keys.send('YawRightButton', hold=hold_yaw)
-            if off['x'] < -close:
-                self.keys.send('YawLeftButton', hold=hold_yaw)
-            if off['y'] > close:
-                self.keys.send('PitchUpButton', hold=hold_pitch)
-            if off['y'] < -close:
-                self.keys.send('PitchDownButton', hold=hold_pitch)
-
+            # Check for hyperspace charging, if so we are done
             if self.jn.ship_state()['status'] == 'starting_hyperspace':
                 return
 
-            for i in range(5):
-                sleep(0.1)
-                new = self.get_destination_offset(scr_reg)
-                if new:
-                    off = new
-                    break
-                sleep(0.25)
+            # Check for compass visibility
+            if not self.have_destination(scr_reg):
+                logger.debug("Compass not found, cannot align.")
+                sleep(1)
+                continue
 
-            if not off:
-                return
+            # Get sensor data
+            nav_offset = self.get_nav_offset(scr_reg)
+            target_offset = self.get_destination_offset(scr_reg)
+            is_occluded = self.is_destination_occluded(scr_reg)
 
-        logger.debug('align=complete')
+            # Check if we are aligned
+            is_aligned_on_compass = abs(nav_offset['yaw']) < nav_close and abs(nav_offset['pit']) < nav_close
+            is_aligned_on_target = target_offset and abs(target_offset['x']) < target_close and abs(
+                target_offset['y']) < target_close
+
+            if is_aligned_on_compass and (is_aligned_on_target or not target_offset):
+                logger.debug('align=complete')
+                return  # We are aligned, exit the function
+
+            # Alignment logic
+            if is_occluded:
+                self.occluded_reposition(scr_reg)
+            elif target_offset and abs(nav_offset['yaw']) < close_enough_for_target_align and abs(
+                    nav_offset['pit']) < close_enough_for_target_align:
+                # Fine-grained alignment using visual target
+                # This uses blocking moves with very short hold times
+                hold_yaw = 0.09
+                if abs(target_offset['x']) > 25: hold_yaw = 0.2
+                hold_pitch = 0.075
+                if abs(target_offset['y']) > 25: hold_pitch = 0.15
+
+                if target_offset['x'] > target_close: self.keys.send('YawRightButton', hold=hold_yaw)
+                if target_offset['x'] < -target_close: self.keys.send('YawLeftButton', hold=hold_yaw)
+                if target_offset['y'] > target_close: self.keys.send('PitchUpButton', hold=hold_pitch)
+                if target_offset['y'] < -target_close: self.keys.send('PitchDownButton', hold=hold_pitch)
+                sleep(0.02)  # Mimic old sc_target_align timing
+            else:
+                # Coarse alignment using compass
+                # This uses blocking moves with long hold times
+                sleep_duration = 0.5
+                if abs(nav_offset['roll']) > nav_close and (180 - abs(nav_offset['roll']) > nav_close):
+                    sleep_duration = 1.0
+                    if nav_offset['yaw'] > 0 and nav_offset['pit'] > 0:
+                        self.rotateRight(nav_offset['roll'])
+                    elif nav_offset['yaw'] > 0 > nav_offset['pit']:
+                        self.rotateLeft(180 - nav_offset['roll'])
+                    elif nav_offset['yaw'] < 0 < nav_offset['pit']:
+                        self.rotateLeft(-nav_offset['roll'])
+                    else:
+                        self.rotateRight(180 + nav_offset['roll'])
+                elif abs(nav_offset['pit']) > nav_close:
+                    if nav_offset['pit'] < 0:
+                        self.pitchDown(abs(nav_offset['pit']))
+                    else:
+                        self.pitchUp(abs(nav_offset['pit']))
+                elif abs(nav_offset['yaw']) > nav_close:
+                    if nav_offset['yaw'] < 0:
+                        self.yawLeft(abs(nav_offset['yaw']))
+                    else:
+                        self.yawRight(abs(nav_offset['yaw']))
+
+                sleep(sleep_duration)  # Use normal sleep, as per user directive not to change movement funcs
 
     def mnvr_to_target(self, scr_reg):
         logger.debug('align')
@@ -1439,7 +1455,6 @@ class EDAutopilot:
             raise Exception('align() not in sc or space')
 
         self.sun_avoid(scr_reg)
-        self.nav_align(scr_reg)
         self.keys.send('SetSpeed100')
 
         self.fsd_target_align(scr_reg)
@@ -1448,19 +1463,23 @@ class EDAutopilot:
         """ Sleeps for a given duration, but wakes up periodically to check for critical events.
         Returns True if the sleep was completed, False if it was interrupted by an event.
         """
-        steps = int(duration / 0.05)
-        if steps < 1:
-            steps = 1
-
-        for _ in range(steps):
-            sleep(0.05)
+        start_time = time.time()
+        while time.time() - start_time < duration:
             if self.interdiction_check():
-                return False
+                # Interdiction handled. As per user request, we consider the
+                # wait complete and continue the sequence.
+                return True
+
             if self.sc_disengage_label_up(scr_reg):
                 if self.sc_disengage_active(scr_reg):
+                    # Disengage is a critical exit, we should not continue.
                     return False
+
             if self.is_destination_occluded(scr_reg):
+                # Occlusion should also interrupt and be handled by the main loop.
                 return False
+
+            sleep(0.05)
         return True
 
     def sc_align(self, scr_reg) -> bool:
@@ -1638,18 +1657,23 @@ class EDAutopilot:
 
         # Need time to move past Sun, account for slowed ship if refuled
         pause_time = add_time
-        if self.config["EnableRandomness"] == True:
-            pause_time = pause_time+random.randint(0, 3)
+        if self.config["EnableRandomness"]:
+            pause_time = pause_time + random.randint(0, 3)
         # need time to get away from the Sun so heat will disipate before we use FSD
-        sleep(pause_time)
+        if not self.smart_sleep(pause_time, scr_reg):
+            logger.warning("Positioning maneuver interrupted.")
+            return False  # Propagate the interruption signal
 
-        if self.config["ElwScannerEnable"] == True:
+        if self.config["ElwScannerEnable"]:
             self.fss_detect_elw(scr_reg)
-            if self.config["EnableRandomness"] == True:
-                sleep(random.randint(0, 3))
-            sleep(3)
+            random_sleep = random.randint(0, 3) if self.config["EnableRandomness"] else 0
+            if not self.smart_sleep(3 + random_sleep, scr_reg):
+                logger.warning("Positioning maneuver interrupted.")
+                return False
         else:
-            sleep(5)  # since not doing FSS, need to give a little more time to get away from Sun, for heat
+            if not self.smart_sleep(5, scr_reg):
+                logger.warning("Positioning maneuver interrupted.")
+                return False
 
         logger.debug('position=complete')
         return True
@@ -2090,7 +2114,12 @@ class EDAutopilot:
 
                 self.update_ap_status("Maneuvering")
 
-                self.position(scr_reg, refueled)
+                position_ok = self.position(scr_reg, refueled)
+                if not position_ok:
+                    # This now only happens on a disengage or other critical event (not interdiction).
+                    # We should abort the FSD assist sequence.
+                    logger.warning("FSD assist aborted during positioning.")
+                    break
 
                 if self.jn.ship_state()['fuel_percent'] < self.config['FuelThreasholdAbortAP']:
                     self.ap_ckb('log', "AP Aborting, low fuel")
@@ -2139,9 +2168,6 @@ class EDAutopilot:
             self.sc_engage()
 
         # Ensure we are 50%, don't want the loop of shame
-        # Align Nav to target
-        self.keys.send('SetSpeed50')
-        self.nav_align(scr_reg)  # Compass Align
         self.keys.send('SetSpeed50')
 
         self.jn.ship_state()['interdicted'] = False
@@ -2184,6 +2210,15 @@ class EDAutopilot:
             self.vce.say("Exiting Supercruise, setting throttle to zero")
             self.keys.send('SetSpeedZero')  # make sure we don't continue to land
             self.ap_ckb('log', "Supercruise dropped, terminating SC Assist")
+
+        # Cleanup CV windows
+        if self.cv_view:
+            try:
+                cv2.destroyWindow('sc_disengage_label_up')
+                cv2.destroyWindow('disengage2')
+                cv2.destroyWindow('disengage')
+            except cv2.error:
+                pass  # Ignore error if window does not exist
 
         self.ap_ckb('log+vce', "Supercruise Assist complete")
 
