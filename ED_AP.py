@@ -2256,19 +2256,21 @@ class EDAutopilot:
                     self._prev_star_system = cur_star_system
                     self.update_ap_status("Idle")
 
-    def single_waypoint_assist(self):
-        """ Travel to a system or station or both."""
-        if self._single_waypoint_system == "" and self._single_waypoint_station == "":
+    def travel_to_destination(self, system, station):
+        """ Travel to a system or station or both. This is a blocking call."""
+        if system == "" and station == "":
             return False
 
-        if self._single_waypoint_system != "":
-            self.ap_ckb('log+vce', f"Targeting system {self._single_waypoint_system}.")
+        already_in_system = self.jn.ship_state()['location'] == system
+
+        if system != "" and not already_in_system:
+            self.ap_ckb('log+vce', f"Targeting system {system}.")
             # Select destination in galaxy map based on name
-            res = self.galaxy_map.set_gal_map_destination_text(self, self._single_waypoint_system, self.jn.ship_state)
+            res = self.galaxy_map.set_gal_map_destination_text(self, system, self.jn.ship_state)
             if res:
                 self.ap_ckb('log', f"System has been targeted.")
             else:
-                self.ap_ckb('log+vce', f"Unable to target {self._single_waypoint_system} in Galaxy Map.")
+                self.ap_ckb('log+vce', f"Unable to target {system} in Galaxy Map.")
                 return False
 
             # Jump to destination
@@ -2276,8 +2278,8 @@ class EDAutopilot:
             if res is False:
                 return False
 
-        if self._single_waypoint_station != "":
-            station_to_find = self._single_waypoint_station
+        if station != "":
+            station_to_find = station
             if "EXT_PANEL_ColonisationShip;".upper() in station_to_find.upper():
                 parts = station_to_find.split(';')
                 if len(parts) > 1:
@@ -2288,9 +2290,15 @@ class EDAutopilot:
                 self.ap_ckb('log+vce', f"Unable to set station by Nav-OCR.")
                 return False
 
-            res = self.supercruise_to_station(self.scrReg, self._single_waypoint_station)
+            res = self.supercruise_to_station(self.scrReg, station)
             if res is False:
                 return False
+
+        return True
+
+    def single_waypoint_assist(self):
+        """ Travel to a system or station or both."""
+        self.travel_to_destination(self._single_waypoint_system, self._single_waypoint_station)
 
     # raising an exception to the engine loop thread, so we can terminate its execution
     #  if thread was in a sleep, the exception seems to not be delivered
@@ -2364,12 +2372,8 @@ class EDAutopilot:
         self.fc_assist_enabled = enable
 
     def set_wing_mining_assist(self, enable=True):
-        if enable:
-            self.wing_mining.start()
-        else:
-            if self.wing_mining_assist_enabled:
-                self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
-            self.wing_mining.stop()
+        if enable == False and self.wing_mining_assist_enabled == True:
+            self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
         self.wing_mining_assist_enabled = enable
 
     def set_cv_view(self, enable=True, x=0, y=0):
@@ -2586,6 +2590,7 @@ class EDAutopilot:
                 logger.debug("Running wing_mining_assist")
                 set_focus_elite_window()
                 self.update_overlay()
+                self.wing_mining.start()
                 try:
                     self.wing_mining_assist()
                 except EDAP_Interrupt:
