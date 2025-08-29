@@ -404,8 +404,18 @@ class EDWayPoint:
                 self.write_waypoints(data=None, filename='./waypoints/' + Path(self.filename).name)
 
             sleep(1.5)  # give time to popdown
-            # Go to ship view
-            ap.ship_control.goto_cockpit_view()
+        # Go back to cockpit view
+        ap.ship_control.goto_cockpit_view()
+
+    def execute_mission_scan(self, ap, dest_key):
+        # Check if we should scan for missions at this waypoint
+        if not self.waypoints[dest_key].get('ScanMissions', False):
+            return
+
+        # Go to mission board and scan
+        if ap.stn_svcs_in_ship.goto_mission_board():
+            ap.stn_svcs_in_ship.scan_missions(ap.keys)
+
 
     def sell_to_colonisation_ship(self, ap):
         """ Sell all cargo to a colonisation/construction ship.
@@ -615,6 +625,7 @@ class EDWayPoint:
                 # Docked - let do trade
                 self.ap.ap_ckb('log+vce', f"Execute trade at Station: {next_wp_station}")
                 self.execute_trade(self.ap, dest_key)
+                self.execute_mission_scan(self.ap, dest_key)
 
             # Mark this waypoint as completed
             self.mark_waypoint_complete(dest_key)
