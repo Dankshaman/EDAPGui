@@ -253,13 +253,13 @@ class WingMining:
         self.ap.keys.send("UI_Down")
         sleep(1)
         self.ap.keys.send("UI_Select")
-        sleep(2)
+        sleep(10)
 
-        scl_mission_depot_tab = self.ap.stn_svcs_in_ship.reg['mission_depot_tab']
-        if not self.ap.ocr.wait_for_text(self.ap, [self.ap.locale["STN_SVCS_MISSION_DEPOT_TAB"]], scl_mission_depot_tab):
-            logger.error("Could not verify that we are on the Mission Depot tab.")
-            self.ap.keys.send("UI_Back", repeat=4)
-            return False
+        # scl_mission_depot_tab = self.ap.stn_svcs_in_ship.reg['mission_depot_tab']
+        # if not self.ap.ocr.wait_for_text(self.ap, [self.ap.locale["STN_SVCS_MISSION_DEPOT_TAB"]], scl_mission_depot_tab):
+            # logger.error("Could not verify that we are on the Mission Depot tab.")
+            # self.ap.keys.send("UI_Back", repeat=4)
+            # return False
 
         if self._find_mission_in_list(mission):
             self.ap.keys.send("UI_Select")
@@ -282,21 +282,10 @@ class WingMining:
         scl_reg_list = self.ap.stn_svcs_in_ship.reg['missions_list']
         min_w, min_h = self.ap.stn_svcs_in_ship.mission_item_size['width'], self.ap.stn_svcs_in_ship.mission_item_size['height']
 
-        self.ap.keys.send('UI_Up', state=1)
-        sleep(1)
-        self.ap.keys.send('UI_Up', state=0)
-        sleep(0.1)
 
         last_text = ""
-        for _ in range(20): # Scroll up to 20 times max
-            image = self.ap.ocr.capture_region_pct(scl_reg_list)
-            _, _, ocr_textlist = self.ap.ocr.get_highlighted_item_data(image, min_w, min_h)
-            current_text = str(ocr_textlist)
-            if last_text == current_text:
-                break
-            last_text = current_text
-            self.ap.keys.send('UI_Up')
-            sleep(0.2)
+        self.ap.keys.send('UI_Down')
+        sleep(0.2)
 
         item_found = False
         in_list = False
