@@ -68,24 +68,25 @@ class EDStationServicesInShip:
 
     def goto_station_services(self) -> bool:
         """ Goto Station Services. """
-        # Go to cockpit view
+
+        # First, check if we are already on the station services screen
+        scl_reg = reg_scale_for_station(self.reg['connected_to'], self.screen.screen_width, self.screen.screen_height)
+        if self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_CONNECTED_TO"]], scl_reg, timeout=2):
+            logger.info("Already on station services screen.")
+            return True
+
+        # If not, go to cockpit view and navigate
         self.ap.ship_control.goto_cockpit_view()
 
         self.keys.send("UI_Up", repeat=3)  # go to very top (refuel line)
         self.keys.send("UI_Down")  # station services
         self.keys.send("UI_Select")  # station services
 
-        # Scale the regions based on the target resolution.
-        scl_reg = reg_scale_for_station(self.reg['connected_to'], self.screen.screen_width, self.screen.screen_height)
-
         # Wait for screen to appear
-        res = self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_CONNECTED_TO"]], scl_reg)
+        if not self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_CONNECTED_TO"]], scl_reg):
+            logger.error("Failed to open station services.")
+            return False
 
-        # Store image
-        # image = self.screen.get_screen_rect_pct(scl_reg['rect'])
-        # cv2.imwrite(f'test/station-services/station-services.png', image)
-
-        # After the OCR timeout, station services will have appeared, to return true anyway.
         return True
 
     def goto_construction_services(self) -> bool:
@@ -418,6 +419,32 @@ class EDStationServicesInShip:
 
         return True, act_qty
 
+    def buy_commodity_for_mission(self, mission):
+        """Buys a commodity required for a given mission."""
+        commodity_name = mission['commodity']
+        tonnage = mission['tonnage']
+        free_cargo = self.ap.internal_panel.get_cargo_info()['free']
+
+        self.ap_ckb('log+vce', f"Buying {tonnage} of {commodity_name} for mission.")
+        logger.info(f"Buying {tonnage} of {commodity_name} for mission.")
+
+        # Assumes we are on the commodity market screen.
+        self.goto_station_services()
+        self.keys.send("UI_Down", repeat=2)
+        self.keys.send("UI_Select")
+        sleep(2) # Wait for screen to load
+
+        if not self.select_buy(self.keys):
+            self.ap_ckb('log+vce', "Failed to select buy tab in commodities market.")
+            return False
+
+        success, _ = self.buy_commodity(self.keys, commodity_name, tonnage, free_cargo)
+
+        # Back to the main station services menu
+        self.keys.send("UI_Back", repeat=4)
+        sleep(1)
+
+        return success
 
     def goto_fleet_carrier_management(self):
         """ Navigates to the Fleet Carrier Management screen from station services. """
@@ -466,19 +493,24 @@ class EDStationServicesInShip:
             logger.error("Could not open station services.")
             return False
 
+        sleep(1) # Give it a second to load station services
+
+        # Navigate to the mission board in the station services menu
+        # This is a bit of a guess, might need calibration
+        self.keys.send('UI_Down', repeat=5)
         sleep(0.2)
         self.keys.send('UI_Select')
-        sleep(0.2)
-        self.keys.send('UI_Select')
-        sleep(1) # Wait for screen to load
+        sleep(2) # Wait for screen to load
 
         # Scale the regions based on the target resolution.
         scl_mission_board = reg_scale_for_station(self.reg['mission_board_header'], self.screen.screen_width, self.screen.screen_height)
 
         # Wait for screen to appear
-        res = self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_MISSION_BOARD_HEADER"]], scl_mission_board)
+        if not self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_MISSION_BOARD_HEADER"]], scl_mission_board):
+            logger.error("Could not verify that we are on the mission board.")
+            self.ap.keys.send("UI_Back", repeat=4)
+            return False
 
-        # After the OCR timeout, mission board will have appeared, to return true anyway.
         self.ap_ckb('log+vce', "Successfully entered Mission Board.")
         logger.debug("goto_mission_board: success")
         sleep(0.2)
@@ -487,7 +519,7 @@ class EDStationServicesInShip:
         self.keys.send('UI_Right')
         sleep(0.2)
         self.keys.send('UI_Select')
-        sleep(10)
+        sleep(2) # Reduced from 10
         return True
 
 
@@ -595,7 +627,7 @@ class EDStationServicesInShip:
         self.ap_ckb('log+vce', "Finished scanning mission board.")
         return True
 
-    def scan_wing_missions(self):
+    def scan_wing_missions(self, accepted_ocr_texts=[]):
         """
         Scans the mission board for specific mining missions and accepts them if they meet the criteria.
         """
@@ -652,6 +684,11 @@ class EDStationServicesInShip:
 
             details_text = " ".join(ocr_textlist)
             logger.info(f"Scanning mission: {details_text}")
+
+            if details_text in accepted_ocr_texts:
+                logger.info("Skipping already accepted mission.")
+                self.keys.send('UI_Down')
+                continue
 
             # Check for exclusion patterns
             excluded = False

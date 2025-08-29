@@ -1,18 +1,22 @@
 from time import sleep
 import time
+import traceback
 from EDlogger import logger
 import difflib
 
 # States for the Wing Mining state machine
 STATE_IDLE = "IDLE"
 STATE_TRAVEL_TO_STATION = "TRAVEL_TO_STATION"
-STATE_GET_MISSIONS = "GET_MISSIONS"
+STATE_SCAN_FOR_MISSIONS = "SCAN_FOR_MISSIONS"
+STATE_PROCESS_QUEUE = "PROCESS_QUEUE"
+STATE_RESCAN_STATION = "RESCAN_STATION"
+STATE_SWITCH_STATION = "SWITCH_STATION"
 STATE_TRAVEL_TO_FC = "TRAVEL_TO_FC"
 STATE_BUY_COMMODITY = "BUY_COMMODITY"
 STATE_TRAVEL_TO_TURN_IN = "TRAVEL_TO_TURN_IN"
 STATE_TURN_IN_MISSION = "TURN_IN_MISSION"
-STATE_SWITCH_STATION = "SWITCH_STATION"
 STATE_DONE = "DONE"
+
 
 class WingMining:
     def __init__(self, ed_ap):
@@ -21,14 +25,12 @@ class WingMining:
         self.mission_queue = []
         self.current_mission = None
         self.current_station_idx = 0  # 0 for A, 1 for B
-        self.stations_checked = {0: False, 1: False}
 
     def start(self):
         logger.info("Starting Wing Mining sequence.")
         self.mission_queue = []
         self.current_mission = None
         self.current_station_idx = 0
-        self.stations_checked = {0: False, 1: False}
         self._update_config_values()
 
         if self.ap.config.get('WingMining_CompletedMissions', 0) >= 20:
@@ -68,8 +70,14 @@ class WingMining:
         # State machine logic
         if self.state == STATE_TRAVEL_TO_STATION:
             self._handle_travel_to_station()
-        elif self.state == STATE_GET_MISSIONS:
-            self._handle_get_missions()
+        elif self.state == STATE_SCAN_FOR_MISSIONS:
+            self._handle_scan_for_missions()
+        elif self.state == STATE_PROCESS_QUEUE:
+            self._handle_process_queue()
+        elif self.state == STATE_RESCAN_STATION:
+            self._handle_rescan_station()
+        elif self.state == STATE_SWITCH_STATION:
+            self._handle_switch_station()
         elif self.state == STATE_TRAVEL_TO_FC:
             self._handle_travel_to_fc()
         elif self.state == STATE_BUY_COMMODITY:
@@ -78,8 +86,6 @@ class WingMining:
             self._handle_travel_to_turn_in()
         elif self.state == STATE_TURN_IN_MISSION:
             self._handle_turn_in_mission()
-        elif self.state == STATE_SWITCH_STATION:
-            self._handle_switch_station()
 
     def set_state(self, new_state):
         if self.state != new_state:
@@ -111,17 +117,25 @@ class WingMining:
 
     def _handle_travel_to_station(self):
         station_name = self._get_current_station_name()
-        self.ap.update_ap_status(f"Traveling to station: {station_name}")
         system, station = station_name.split('/')
+
+        # Check if we are already docked at the target station
+        ship_state = self.ap.jn.ship_state()
+        if ship_state['status'] == 'in_station' and ship_state['cur_station'] == station:
+            logger.info(f"Already docked at {station_name}. Skipping travel.")
+            self.set_state(STATE_SCAN_FOR_MISSIONS)
+            return
+
+        self.ap.update_ap_status(f"Traveling to station: {station_name}")
         if self.ap.travel_to_destination(system, station):
-            self.set_state(STATE_GET_MISSIONS)
+            self.set_state(STATE_SCAN_FOR_MISSIONS)
         else:
             # Travel failed, stop the assist
             self.stop()
 
-    def _handle_get_missions(self):
+    def _handle_scan_for_missions(self):
         station_name = self._get_current_station_name()
-        self.ap.update_ap_status(f"Getting missions from {station_name}")
+        self.ap.update_ap_status(f"Scanning for missions at {station_name}")
         self.ap.stn_svcs_in_ship.goto_mission_board()
 
         accepted_ocr_texts = [m['ocr_text'] for m in self.mission_queue]
@@ -130,19 +144,45 @@ class WingMining:
         if new_missions:
             self.mission_queue.extend(new_missions)
             logger.info(f"Found {len(new_missions)} new missions.")
-            self.stations_checked[self.current_station_idx] = False # Reset check if we find new missions
         else:
             logger.info(f"No new missions found at {station_name}.")
-            self.stations_checked[self.current_station_idx] = True
 
-        self.ap.keys.send("UI_Back", repeat=4) # back to main menu
+        self.ap.keys.send("UI_Back", repeat=4)
         sleep(1)
+        self.set_state(STATE_PROCESS_QUEUE)
 
+    def _handle_process_queue(self):
         if self.mission_queue:
             self.current_mission = self.mission_queue.pop(0)
             self.set_state(STATE_TRAVEL_TO_FC)
         else:
+            self.set_state(STATE_RESCAN_STATION)
+
+    def _handle_rescan_station(self):
+        station_name = self._get_current_station_name()
+        self.ap.update_ap_status(f"Re-scanning for missions at {station_name}")
+        self.ap.stn_svcs_in_ship.goto_mission_board()
+
+        accepted_ocr_texts = [m['ocr_text'] for m in self.mission_queue]
+        new_missions = self.ap.stn_svcs_in_ship.scan_wing_missions(accepted_ocr_texts)
+
+        if new_missions:
+            self.mission_queue.extend(new_missions)
+            logger.info(f"Found {len(new_missions)} new missions during re-scan.")
+            self.ap.keys.send("UI_Back", repeat=4)
+            sleep(1)
+            self.set_state(STATE_PROCESS_QUEUE)
+        else:
+            logger.info(f"No new missions found during re-scan at {station_name}.")
+            self.ap.keys.send("UI_Back", repeat=4)
+            sleep(1)
             self.set_state(STATE_SWITCH_STATION)
+
+    def _handle_switch_station(self):
+        self.mission_queue = []
+        self.current_station_idx = 1 if self.current_station_idx == 0 else 0
+        logger.info(f"Switching to station index {self.current_station_idx}")
+        self.set_state(STATE_TRAVEL_TO_STATION)
 
     def _handle_travel_to_fc(self):
         commodity = self.current_mission['commodity'].lower()
@@ -157,13 +197,23 @@ class WingMining:
         if self.ap.travel_to_destination(system, station):
             self.set_state(STATE_BUY_COMMODITY)
         else:
-            # Travel failed, stop the assist
             self.stop()
 
     def _handle_buy_commodity(self):
-        self.ap.update_ap_status(f"Buying {self.current_mission['tonnage']} tons of {self.current_mission['commodity']}")
-        self.ap.stn_svcs_in_ship.buy_commodity_for_mission(self.current_mission)
-        self.set_state(STATE_TRAVEL_TO_TURN_IN)
+        try:
+            self.ap.update_ap_status(f"Buying {self.current_mission['tonnage']} tons of {self.current_mission['commodity']}")
+            if self.ap.stn_svcs_in_ship.buy_commodity_for_mission(self.current_mission):
+                self.set_state(STATE_TRAVEL_TO_TURN_IN)
+            else:
+                logger.warning(f"Failed to buy commodity (returned False), re-queuing mission: {self.current_mission}")
+                self.mission_queue.insert(0, self.current_mission)
+                self.set_state(STATE_PROCESS_QUEUE)
+        except Exception as e:
+            logger.error(f"Exception caught in _handle_buy_commodity: {e}")
+            logger.error(traceback.format_exc())
+            logger.warning(f"Re-queuing mission due to exception: {self.current_mission}")
+            self.mission_queue.insert(0, self.current_mission)
+            self.set_state(STATE_PROCESS_QUEUE)
 
     def _handle_travel_to_turn_in(self):
         station_name = self._get_current_station_name()
@@ -172,7 +222,6 @@ class WingMining:
         if self.ap.travel_to_destination(system, station):
             self.set_state(STATE_TURN_IN_MISSION)
         else:
-            # Travel failed, stop the assist
             self.stop()
 
     def _handle_turn_in_mission(self):
@@ -185,30 +234,10 @@ class WingMining:
             self.ap.update_ap_status(f"Mission for {self.current_mission['commodity']} complete. Total: {self.completed_missions}")
         else:
             logger.warning(f"Failed to turn in mission, re-queuing: {self.current_mission}")
-            # Re-queue the mission to try again later
             self.mission_queue.insert(0, self.current_mission)
 
         self.current_mission = None
-
-        if self.mission_queue:
-            self.current_mission = self.mission_queue.pop(0)
-            self.set_state(STATE_TRAVEL_TO_FC)
-        else:
-            # No more missions in queue, go check the current station again.
-            self.set_state(STATE_GET_MISSIONS)
-
-    def _handle_switch_station(self):
-        # If we have checked both stations and found no missions, idle.
-        if all(self.stations_checked.values()):
-            logger.info("Both stations checked and no new missions found. Idling for a while.")
-            self.stations_checked = {0: False, 1: False} # Reset for the next cycle
-            # Maybe add a timer here before idling, for now just stop.
-            self.stop()
-            self.ap.update_ap_status("Wing Mining: No missions found at either station. Stopping.")
-            return
-
-        self.current_station_idx = 1 if self.current_station_idx == 0 else 0
-        self.set_state(STATE_TRAVEL_TO_STATION)
+        self.set_state(STATE_PROCESS_QUEUE)
 
     def turn_in_mission(self, mission):
         self.ap.stn_svcs_in_ship.goto_mission_board()

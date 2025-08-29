@@ -2372,9 +2372,12 @@ class EDAutopilot:
         self.fc_assist_enabled = enable
 
     def set_wing_mining_assist(self, enable=True):
-        if enable == False and self.wing_mining_assist_enabled == True:
-            self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
+        if not enable and self.wing_mining_assist_enabled:
+            self.wing_mining.stop()
         self.wing_mining_assist_enabled = enable
+        if enable:
+            # This will also reset the state machine if it was already running
+            self.wing_mining.start()
 
     def set_cv_view(self, enable=True, x=0, y=0):
         self.cv_view = enable
@@ -2588,20 +2591,22 @@ class EDAutopilot:
 
             elif self.wing_mining_assist_enabled:
                 logger.debug("Running wing_mining_assist")
-                set_focus_elite_window()
-                self.update_overlay()
-                self.wing_mining.start()
                 try:
+                    # Non-blocking call to the state machine's run method
                     self.wing_mining_assist()
+                    # If the state machine puts itself into IDLE or DONE, we can disable the assist.
+                    if self.wing_mining.state == "IDLE" or self.wing_mining.state == "DONE":
+                        self.set_wing_mining_assist(False)
+                        self.ap_ckb('wing_mining_stop')
                 except EDAP_Interrupt:
-                    logger.debug("Caught stop exception")
+                    logger.debug("Caught stop exception for Wing Mining")
+                    self.set_wing_mining_assist(False)
+                    self.ap_ckb('wing_mining_stop')
                 except Exception as e:
-                    print("Trapped generic:"+str(e))
+                    print("Trapped generic exception in Wing Mining:"+str(e))
                     traceback.print_exc()
-
-                self.wing_mining_assist_enabled = False
-                self.ap_ckb('wing_mining_stop')
-                self.update_overlay()
+                    self.set_wing_mining_assist(False)
+                    self.ap_ckb('wing_mining_stop')
 
             # Check once EDAPGUI loaded to prevent errors logging to the listbox before loaded
             if self.gui_loaded:
