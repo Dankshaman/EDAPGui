@@ -582,13 +582,11 @@ class EDStationServicesInShip:
                                 reward = max(possible_rewards)
                                 if reward >= min_reward:
                                     self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
-                                    logger.info(f"Mission matched, but not accepting (test mode): {details_text}")
-                                    # keys.send('UI_Select') # Select mission
-                                    # sleep(1)
-                                    # keys.send('UI_Select') # Accept mission
-                                    # sleep(1)
-                                    # keys.send('UI_Back') # Back to mission list
-                                    # sleep(1)
+                                    logger.info(f"Mission matched, accepting: {details_text}")
+                                    keys.send('UI_Select') # Select mission
+                                    sleep(1)
+                                    keys.send('UI_Select') # Accept mission
+                                    sleep(5)
                                     break # Move to next mission in list
             keys.send('UI_Down')
 
