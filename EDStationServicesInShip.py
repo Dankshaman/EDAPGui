@@ -812,7 +812,8 @@ class EDStationServicesInShip:
                                     mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
                                     if mission_accepted_event:
                                         mission_id = mission_accepted_event.get('MissionID')
-                                        accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": reward, "mission_id": mission_id, "ocr_text": details_text})
+                                        ocr_text = match.group(0)
+                                        accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": reward, "mission_id": mission_id, "ocr_text": ocr_text})
                                     else:
                                         logger.warning("Did not find MissionAccepted event in journal")
                                     sleep(5)
