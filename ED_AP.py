@@ -34,6 +34,7 @@ from Voice import *
 from Robigo import *
 from TCE_Integration import TceIntegration
 from EDFleetCarrierAP import FleetCarrierAutopilot
+from WingMining import WingMining
 
 """
 File:EDAP.py    EDAutopilot
@@ -108,6 +109,17 @@ class EDAutopilot:
             "EDMesgActionsPort": 15570,
             "EDMesgEventsPort": 15571,
             "DebugOverlay": False,
+            "WingMining_StationA": "",
+            "WingMining_StationB": "",
+            "WingMining_FC_A_Bertrandite": "",
+            "WingMining_FC_A_Gold": "",
+            "WingMining_FC_A_Indite": "",
+            "WingMining_FC_A_Silver": "",
+            "WingMining_FC_B_Bertrandite": "",
+            "WingMining_FC_B_Gold": "",
+            "WingMining_FC_B_Indite": "",
+            "WingMining_FC_B_Silver": "",
+            "WingMining_CompletedMissions": 0,
         }
         # NOTE!!! When adding a new config value above, add the same after read_config() to set
         # a default value or an error will occur reading the new value!
@@ -156,6 +168,28 @@ class EDAutopilot:
                 cnf['EDMesgEventsPort'] = 15571
             if 'DebugOverlay' not in cnf:
                 cnf['DebugOverlay'] = False
+            if 'WingMining_StationA' not in cnf:
+                cnf['WingMining_StationA'] = ""
+            if 'WingMining_StationB' not in cnf:
+                cnf['WingMining_StationB'] = ""
+            if 'WingMining_FC_A_Bertrandite' not in cnf:
+                cnf['WingMining_FC_A_Bertrandite'] = ""
+            if 'WingMining_FC_A_Gold' not in cnf:
+                cnf['WingMining_FC_A_Gold'] = ""
+            if 'WingMining_FC_A_Indite' not in cnf:
+                cnf['WingMining_FC_A_Indite'] = ""
+            if 'WingMining_FC_A_Silver' not in cnf:
+                cnf['WingMining_FC_A_Silver'] = ""
+            if 'WingMining_FC_B_Bertrandite' not in cnf:
+                cnf['WingMining_FC_B_Bertrandite'] = ""
+            if 'WingMining_FC_B_Gold' not in cnf:
+                cnf['WingMining_FC_B_Gold'] = ""
+            if 'WingMining_FC_B_Indite' not in cnf:
+                cnf['WingMining_FC_B_Indite'] = ""
+            if 'WingMining_FC_B_Silver' not in cnf:
+                cnf['WingMining_FC_B_Silver'] = ""
+            if 'WingMining_CompletedMissions' not in cnf:
+                cnf['WingMining_CompletedMissions'] = 0
             self.config = cnf
             logger.debug("read AP json:"+str(cnf))
         else:
@@ -203,6 +237,8 @@ class EDAutopilot:
         self.dss_assist_enabled = False
         self.single_waypoint_enabled = False
         self.fc_assist_enabled = False
+        self.wing_mining_assist_enabled = False
+        self.wing_mining_next_state = None
 
         # Create instance of each of the needed Classes
         self.gfx_settings = EDGraphicsSettings()
@@ -221,6 +257,7 @@ class EDAutopilot:
         self.ap_ckb = cb
         self.waypoint = EDWayPoint(self, self.jn.ship_state()['odyssey'])
         self.robigo = Robigo(self)
+        self.wing_mining = WingMining(self)
         self.status = StatusParser()
         self.nav_route = NavRouteParser()
         self.ship_control = EDShipControl(self, self.scr, self.keys, cb)
@@ -2347,6 +2384,18 @@ class EDAutopilot:
             self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
         self.fc_assist_enabled = enable
 
+    def set_wing_mining_assist(self, enable=True):
+        if enable:
+            if not self.wing_mining_assist_enabled:
+                self.wing_mining.start()
+        else:
+            if self.wing_mining_assist_enabled:
+                self.wing_mining.stop()
+        self.wing_mining_assist_enabled = enable
+
+    def reset_wing_mining_counter(self):
+        self.wing_mining.reset_mission_counter()
+
     def set_cv_view(self, enable=True, x=0, y=0):
         self.cv_view = enable
         self.config['Enable_CV_View'] = int(self.cv_view)  # update the config
@@ -2556,6 +2605,14 @@ class EDAutopilot:
                 self.fc_assist_enabled = False
                 self.ap_ckb('fc_stop') # This will need to be added to the GUI
                 self.update_overlay()
+
+            elif self.wing_mining_assist_enabled == True:
+                try:
+                    self.wing_mining.run()
+                except Exception as e:
+                    logger.error(f"Error in Wing Mining assist: {e}")
+                    traceback.print_exc()
+                    self.set_wing_mining_assist(False) # Stop on error
 
             # Check once EDAPGUI loaded to prevent errors logging to the listbox before loaded
             if self.gui_loaded:

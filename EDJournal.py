@@ -394,6 +394,19 @@ class EDJournal:
             #logger.exception("Exception occurred")
             print(e)
 
+    def wait_for_event(self, event_type, timeout=10):
+        start_time = time()
+        while time() < start_time + timeout:
+            line = self.log_file.readline()
+            if line:
+                log = loads(line)
+                if log.get('event') == event_type:
+                    self.parse_line(log) # Make sure ship state is updated
+                    return log
+            else:
+                sleep(0.1)
+        return None
+
     def ship_state(self):
         latest_log = self.get_latest_log()
 

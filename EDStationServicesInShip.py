@@ -40,6 +40,7 @@ class EDStationServicesInShip:
                     'commodity_quantity': {'rect': [0.4, 0.5, 0.6, 0.6]},
                     'mission_board_header': {'rect': [0.4, 0.1, 0.6, 0.2]},
                     'missions_list': {'rect': [0.06, 0.25, 0.48, 0.8]},
+                    'mission_depot_tab': {'rect': [0.6, 0.15, 0.8, 0.2]},
                     }
         self.commodity_item_size = {"width": 100, "height": 15}
         self.mission_item_size = {"width": 100, "height": 15}
@@ -594,7 +595,117 @@ class EDStationServicesInShip:
         self.ap_ckb('log+vce', "Finished scanning mission board.")
         return True
 
+    def scan_wing_missions(self):
+        """
+        Scans the mission board for specific mining missions and accepts them if they meet the criteria.
+        """
+        self.ap_ckb('log+vce', "Scanning mission board.")
+        logger.debug("scan_missions: entered")
 
+        mission_name_patterns = [
+            re.compile(r"Mine (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Mining rush for (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Blast out (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+        ]
+
+        exclusion_patterns = [
+            re.compile(r"Bring us..", re.IGNORECASE),
+            re.compile(r"We need...", re.IGNORECASE),
+            re.compile(r"Industry Needs..", re.IGNORECASE),
+            re.compile(r"Source and return..", re.IGNORECASE),
+        ]
+
+        commodities = {
+            "Gold": (150, 250),
+            "Silver": (300, 450),
+            "Bertrandite": (600, 1000),
+            "Indite": (650, 1100),
+        }
+
+        min_reward = 47000000
+
+        accepted_missions = []
+
+        scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
+        min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+
+        # Go to top of list
+        last_text = ""
+        self.keys.send('UI_Down')
+        sleep(0.5)
+
+        in_list = False
+        for _ in range(100): # Max 100 scrolls
+            image = self.ocr.capture_region_pct(scl_reg_list)
+            img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+
+            if self.ap.debug_overlay:
+                self.ap.overlay.overlay_remove_floating_text('missions_list_text')
+                abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
+                self.ap.overlay.overlay_floating_text('missions_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
+                self.ap.overlay.overlay_paint()
+
+            if img_selected is None and in_list:
+                # End of list
+                break
+            in_list = True
+
+            details_text = " ".join(ocr_textlist)
+            logger.info(f"Scanning mission: {details_text}")
+
+            # Check for exclusion patterns
+            excluded = False
+            for pattern in exclusion_patterns:
+                if pattern.search(details_text):
+                    excluded = True
+                    break
+            if excluded:
+                self.keys.send('UI_Down')
+                continue
+
+            # Check for mission name patterns
+            for pattern in mission_name_patterns:
+                match = pattern.search(details_text)
+                if match:
+                    tonnage_str, commodity_name = match.groups()
+                    tonnage = self._parse_number_with_ocr_errors(tonnage_str)
+                    commodity_name = commodity_name.strip()
+
+                    # Check commodity and tonnage
+                    parsed_commodity_name = commodity_name.strip().lower()
+                    matched_commodity = None
+                    for c_name in commodities.keys():
+                        if c_name.lower() == parsed_commodity_name:
+                            matched_commodity = c_name
+                            break
+
+                    if matched_commodity:
+                        min_ton, max_ton = commodities[matched_commodity]
+                        if min_ton <= tonnage <= max_ton:
+                            # Check reward
+                            reward_matches = re.findall(r"([\d,]+) CR", details_text, re.IGNORECASE)
+                            if reward_matches:
+                                possible_rewards = [int(r.replace(",", "")) for r in reward_matches]
+                                reward = max(possible_rewards)
+                                if reward >= min_reward:
+                                    self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
+                                    logger.info(f"Mission matched, accepting: {details_text}")
+                                    self.keys.send('UI_Select') # Select mission
+                                    sleep(1)
+                                    self.keys.send('UI_Select') # Accept mission
+                                    mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
+                                    if mission_accepted_event:
+                                        mission_id = mission_accepted_event.get('MissionID')
+                                        accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": reward, "mission_id": mission_id, "ocr_text": details_text})
+                                    else:
+                                        logger.warning("Did not find MissionAccepted event in journal")
+                                    sleep(5)
+                                    break # Move to next mission in list
+            self.keys.send('UI_Down')
+
+
+        self.ap_ckb('log+vce', "Finished scanning mission board.")
+        return accepted_missions
 
 def dummy_cb(msg, body=None):
     pass
