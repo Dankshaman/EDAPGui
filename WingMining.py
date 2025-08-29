@@ -248,7 +248,10 @@ class WingMining:
             self.ap.keys.send("UI_Back", repeat=4)
             return False
 
-        self.ap.keys.send("UI_Right", repeat=2)
+        self.ap.keys.send("UI_Right", repeat=3)
+        sleep(1)
+        self.ap.keys.send("UI_Down")
+        sleep(1)
         self.ap.keys.send("UI_Select")
         sleep(2)
 
@@ -263,9 +266,11 @@ class WingMining:
             sleep(1)
             self.ap.keys.send("UI_Select")
             sleep(1)
-            self.ap.keys.send("UI_Back")
+            self.ap.keys.send("UI_Right", hold=30)
             sleep(1)
-            self.ap.keys.send("UI_Back", repeat=4)
+            self.ap.keys.send("UI_Select")
+            sleep(5)
+            self.ap.keys.send("UI_Back", repeat=6)
             return True
         else:
             logger.warning(f"Could not find mission to turn in: {mission}")
