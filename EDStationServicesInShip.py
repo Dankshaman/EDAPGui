@@ -270,6 +270,10 @@ class EDStationServicesInShip:
         """
         Finds an item in a list using the "intelligent scroll" method.
         """
+        if self.ap.debug_overlay:
+            abs_rect = self.screen.screen_rect_to_abs(list_region['rect'])
+            self.ap.overlay.overlay_rect1('commodities_list_rect', abs_rect, (255, 0, 0), 2)
+            self.ap.overlay.overlay_paint()
 
         # Go to top of list
         last_text = ""
@@ -312,6 +316,7 @@ class EDStationServicesInShip:
 
         if self.ap.debug_overlay:
             sleep(1)
+            self.ap.overlay.overlay_remove_rect('commodities_list_rect')
             self.ap.overlay.overlay_remove_floating_text('commodities_list_text')
             self.ap.overlay.overlay_paint()
 
@@ -627,6 +632,11 @@ class EDStationServicesInShip:
         scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
         min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
 
+        if self.ap.debug_overlay:
+            abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
+            self.ap.overlay.overlay_rect1('missions_list_rect', abs_rect, (255, 0, 0), 2)
+            self.ap.overlay.overlay_paint()
+
         # Go to top of list
         last_text = ""
         keys.send('UI_Down')
@@ -638,7 +648,6 @@ class EDStationServicesInShip:
             img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
 
             if self.ap.debug_overlay:
-                self.ap.overlay.overlay_remove_floating_text('missions_list_text')
                 abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
                 self.ap.overlay.overlay_floating_text('missions_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
                 self.ap.overlay.overlay_paint()
@@ -696,6 +705,11 @@ class EDStationServicesInShip:
             keys.send('UI_Down')
 
 
+        if self.ap.debug_overlay:
+            self.ap.overlay.overlay_remove_rect('missions_list_rect')
+            self.ap.overlay.overlay_remove_floating_text('missions_list_text')
+            self.ap.overlay.overlay_paint()
+
         self.ap_ckb('log+vce', "Finished scanning mission board.")
         return True
 
@@ -740,6 +754,11 @@ class EDStationServicesInShip:
         scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
         min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
 
+        if self.ap.debug_overlay:
+            abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
+            self.ap.overlay.overlay_rect1('missions_list_rect', abs_rect, (255, 0, 0), 2)
+            self.ap.overlay.overlay_paint()
+
         # Go to top of list
         last_text = ""
         self.keys.send('UI_Down')
@@ -751,7 +770,6 @@ class EDStationServicesInShip:
             img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
 
             if self.ap.debug_overlay:
-                self.ap.overlay.overlay_remove_floating_text('missions_list_text')
                 abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
                 self.ap.overlay.overlay_floating_text('missions_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
                 self.ap.overlay.overlay_paint()
@@ -821,6 +839,11 @@ class EDStationServicesInShip:
             self.keys.send('UI_Down')
 
 
+        if self.ap.debug_overlay:
+            self.ap.overlay.overlay_remove_rect('missions_list_rect')
+            self.ap.overlay.overlay_remove_floating_text('missions_list_text')
+            self.ap.overlay.overlay_paint()
+
         self.ap_ckb('log+vce', "Finished scanning mission board.")
         return accepted_missions
 
@@ -834,7 +857,7 @@ class EDStationServicesInShip:
         self.keys.send("UI_Down")
         sleep(1)
         self.keys.send("UI_Select")
-        sleep(5)
+        sleep(10)
         self.ap_ckb('log+vce', "Scanning mission depot.")
         logger.debug("check_mission_depot_for_wing_missions: entered")
 
