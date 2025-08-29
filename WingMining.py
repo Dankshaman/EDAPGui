@@ -27,6 +27,8 @@ class WingMining:
         self.current_mission = None
         self.current_station_idx = 0  # 0 for A, 1 for B
         self.mission_turned_in = False
+        self.fc_attempt = 1
+        self.fc_config_2 = {}
         self._load_state()
 
     def _get_state(self):
@@ -53,6 +55,7 @@ class WingMining:
         self.mission_queue = []
         self.current_mission = None
         self.current_station_idx = 0
+        self.fc_attempt = 1
         self._update_config_values()
         self.mission_turned_in = False
 
@@ -137,6 +140,20 @@ class WingMining:
                 "silver": self.ap.config.get('WingMining_FC_B_Silver', '')
             }
         }
+        self.fc_config_2 = {
+            0: { # Station A
+                "bertrandite": self.ap.config.get('WingMining_FC_A_Bertrandite_2', ''),
+                "gold": self.ap.config.get('WingMining_FC_A_Gold_2', ''),
+                "indite": self.ap.config.get('WingMining_FC_A_Indite_2', ''),
+                "silver": self.ap.config.get('WingMining_FC_A_Silver_2', '')
+            },
+            1: { # Station B
+                "bertrandite": self.ap.config.get('WingMining_FC_B_Bertrandite_2', ''),
+                "gold": self.ap.config.get('WingMining_FC_B_Gold_2', ''),
+                "indite": self.ap.config.get('WingMining_FC_B_Indite_2', ''),
+                "silver": self.ap.config.get('WingMining_FC_B_Silver_2', '')
+            }
+        }
 
     def _get_current_station_name(self):
         return self.station_a if self.current_station_idx == 0 else self.station_b
@@ -180,6 +197,7 @@ class WingMining:
     def _handle_process_queue(self):
         if self.mission_queue:
             self.current_mission = self.mission_queue.pop(0)
+            self.fc_attempt = 1
             self.set_state(STATE_TRAVEL_TO_FC)
         else:
             if self.mission_turned_in:
@@ -216,10 +234,21 @@ class WingMining:
 
     def _handle_travel_to_fc(self):
         commodity = self.current_mission['commodity'].lower()
-        fc_name = self.fc_config[self.current_station_idx][commodity]
+        if self.fc_attempt == 1:
+            fc_name = self.fc_config[self.current_station_idx][commodity]
+        else:
+            fc_name = self.fc_config_2[self.current_station_idx][commodity]
+
         if not fc_name:
-            logger.error(f"No Fleet Carrier configured for {commodity} at station index {self.current_station_idx}")
-            self.stop()
+            logger.error(f"No Fleet Carrier configured for {commodity} at station index {self.current_station_idx} (attempt {self.fc_attempt})")
+            if self.fc_attempt == 1:
+                logger.info("Trying secondary FC.")
+                self.fc_attempt = 2
+                self.set_state(STATE_TRAVEL_TO_FC)
+            else:
+                logger.error("No secondary FC configured, re-queuing mission.")
+                self.mission_queue.insert(0, self.current_mission)
+                self.set_state(STATE_PROCESS_QUEUE)
             return
 
         self.ap.update_ap_status(f"Traveling to FC: {fc_name} for {self.current_mission['commodity']}")
@@ -235,9 +264,14 @@ class WingMining:
             if self.ap.stn_svcs_in_ship.buy_commodity_for_mission(self.current_mission):
                 self.set_state(STATE_TRAVEL_TO_TURN_IN)
             else:
-                logger.warning(f"Failed to buy commodity (returned False), re-queuing mission: {self.current_mission}")
-                self.mission_queue.insert(0, self.current_mission)
-                self.set_state(STATE_PROCESS_QUEUE)
+                if self.fc_attempt == 1:
+                    logger.warning(f"Failed to buy commodity, trying secondary FC.")
+                    self.fc_attempt = 2
+                    self.set_state(STATE_TRAVEL_TO_FC)
+                else:
+                    logger.warning(f"Failed to buy commodity from secondary FC, re-queuing mission: {self.current_mission}")
+                    self.mission_queue.insert(0, self.current_mission)
+                    self.set_state(STATE_PROCESS_QUEUE)
         except Exception as e:
             logger.error(f"Exception caught in _handle_buy_commodity: {e}")
             logger.error(traceback.format_exc())
