@@ -25,6 +25,7 @@ class WingMining:
         self.mission_queue = []
         self.current_mission = None
         self.current_station_idx = 0  # 0 for A, 1 for B
+        self.mission_turned_in = False
 
     def start(self):
         logger.info("Starting Wing Mining sequence.")
@@ -32,6 +33,7 @@ class WingMining:
         self.current_mission = None
         self.current_station_idx = 0
         self._update_config_values()
+        self.mission_turned_in = False
 
         if self.ap.config.get('WingMining_CompletedMissions', 0) >= 20:
             self.set_state(STATE_DONE)
@@ -156,7 +158,10 @@ class WingMining:
             self.current_mission = self.mission_queue.pop(0)
             self.set_state(STATE_TRAVEL_TO_FC)
         else:
-            self.set_state(STATE_RESCAN_STATION)
+            if self.mission_turned_in:
+                self.set_state(STATE_RESCAN_STATION)
+            else:
+                self.set_state(STATE_SWITCH_STATION)
 
     def _handle_rescan_station(self):
         station_name = self._get_current_station_name()
@@ -181,6 +186,7 @@ class WingMining:
     def _handle_switch_station(self):
         self.mission_queue = []
         self.current_station_idx = 1 if self.current_station_idx == 0 else 0
+        self.mission_turned_in = False
         logger.info(f"Switching to station index {self.current_station_idx}")
         self.set_state(STATE_TRAVEL_TO_STATION)
 
@@ -232,6 +238,7 @@ class WingMining:
             self.ap.update_config()
             self.ap.ap_ckb('update_wing_mining_mission_count', self.completed_missions)
             self.ap.update_ap_status(f"Mission for {self.current_mission['commodity']} complete. Total: {self.completed_missions}")
+            self.mission_turned_in = True
         else:
             logger.warning(f"Failed to turn in mission, re-queuing: {self.current_mission}")
             self.mission_queue.insert(0, self.current_mission)
