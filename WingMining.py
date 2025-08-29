@@ -349,7 +349,7 @@ class WingMining:
 
             if ocr_textlist:
                 current_text = " ".join(ocr_textlist)
-                if current_text.startswith(ocr_text_to_find):
+                if current_text.upper().startswith(ocr_text_to_find.upper()):
                     item_found = True
                     break
 
