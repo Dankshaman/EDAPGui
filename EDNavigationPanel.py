@@ -268,7 +268,7 @@ class EDNavigationPanel:
                                                       (0, 255, 0))
                 self.ap.overlay.overlay_paint()
 
-            if ocr_textlist is not None and item_name.upper() in str(ocr_textlist).upper():
+            if ocr_textlist is not None and item_name.upper().replace("O", "0") in str(ocr_textlist).upper().replace("O", "0"):
                 item_found = True
                 break
 

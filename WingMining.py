@@ -1,6 +1,9 @@
 from time import sleep
 import time
 import traceback
+import re
+import cv2
+import os
 from EDlogger import logger
 import difflib
 import StateManager as sm
@@ -343,25 +346,55 @@ class WingMining:
 
     def _find_mission_in_list(self, mission):
         ocr_text_to_find = mission['ocr_text']
+
+        # Clean up the OCR text to remove reward and other details
+        mission_name_patterns = [
+            re.compile(r"Mine (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Mining rush for (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Blast out (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+        ]
+        
+        cleaned_text = None
+        for pattern in mission_name_patterns:
+            match = pattern.search(ocr_text_to_find)
+            if match:
+                cleaned_text = match.group(0)
+                break
+        
+        if cleaned_text:
+            if ocr_text_to_find != cleaned_text:
+                logger.info(f"Cleaned mission text for searching: '{cleaned_text}'")
+                ocr_text_to_find = cleaned_text
+        
         scl_reg_list = self.ap.stn_svcs_in_ship.reg['missions_list']
         min_w, min_h = self.ap.stn_svcs_in_ship.mission_item_size['width'], self.ap.stn_svcs_in_ship.mission_item_size['height']
 
 
         last_text = ""
         self.ap.keys.send('UI_Down')
-        sleep(0.2)
+        sleep(0.5)
 
         item_found = False
         in_list = False
+        loop_count = 0
         for _ in range(100):
             image = self.ap.ocr.capture_region_pct(scl_reg_list)
             img_selected, _, ocr_textlist = self.ap.ocr.get_highlighted_item_data(image, min_w, min_h)
 
+            if img_selected is not None:
+                if not os.path.exists('debug_screenshots'):
+                    os.makedirs('debug_screenshots')
+                cv2.imwrite(f'debug_screenshots/mission_item_{loop_count}.png', img_selected)
+            
+            loop_count += 1
+
             if ocr_textlist:
                 current_text = " ".join(ocr_textlist)
-                if current_text.upper().startswith(ocr_text_to_find.upper()):
-                    item_found = True
-                    break
+                logger.info(f"Looking for mission: '{ocr_text_to_find}'. Found text: '{current_text}'")
+            if current_text.upper().startswith(ocr_text_to_find.upper()):
+                logger.info("Found matching mission.")
+                item_found = True
+                break
 
             if img_selected is None and in_list:
                 break
@@ -369,5 +402,3 @@ class WingMining:
             in_list = True
             self.ap.keys.send('UI_Down')
             sleep(0.2)
-
-        return item_found
