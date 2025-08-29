@@ -823,6 +823,92 @@ class EDStationServicesInShip:
         self.ap_ckb('log+vce', "Finished scanning mission board.")
         return accepted_missions
 
+    def check_mission_depot_for_wing_missions(self):
+        """
+        Checks the mission depot for unfulfilled wing mining missions.
+        """
+        # Navigate to the mission depot tab
+        self.keys.send("UI_Right", repeat=4)
+        sleep(1)
+        self.keys.send("UI_Down")
+        sleep(1)
+        self.keys.send("UI_Select")
+        sleep(5)
+        self.ap_ckb('log+vce', "Scanning mission depot.")
+        logger.debug("check_mission_depot_for_wing_missions: entered")
+
+        mission_name_patterns = [
+            re.compile(r"Mine (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Mining rush for (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Blast out (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+        ]
+
+        commodities = {
+            "Gold": (150, 250),
+            "Silver": (300, 450),
+            "Bertrandite": (600, 1000),
+            "Indite": (650, 1100),
+        }
+
+        pending_missions = []
+
+        scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
+        min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+
+        # Go to top of list
+        self.keys.send('UI_Down')
+        sleep(0.5)
+
+        in_list = False
+        for _ in range(100): # Max 100 scrolls
+            image = self.ocr.capture_region_pct(scl_reg_list)
+            img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+
+            if img_selected is None and in_list:
+                # End of list
+                break
+            in_list = True
+
+            details_text = " ".join(ocr_textlist)
+            logger.info(f"Scanning depot mission: {details_text}")
+
+            # Check if it's a completed mission
+            if "COMPLETED" in details_text.upper():
+                self.keys.send('UI_Down')
+                continue
+
+            # Check for mission name patterns
+            for pattern in mission_name_patterns:
+                match = pattern.search(details_text)
+                if match:
+                    tonnage_str, commodity_name = match.groups()
+                    tonnage = self._parse_number_with_ocr_errors(tonnage_str)
+                    commodity_name = commodity_name.strip()
+
+                    # Check commodity and tonnage
+                    parsed_commodity_name = commodity_name.strip().lower()
+                    matched_commodity = None
+                    for c_name in commodities.keys():
+                        if c_name.lower() == parsed_commodity_name:
+                            matched_commodity = c_name
+                            break
+
+                    if matched_commodity:
+                        min_ton, max_ton = commodities[matched_commodity]
+                        if min_ton <= tonnage <= max_ton:
+                            # This is a pending wing mining mission
+                            # We need to find the mission ID from the journal
+                            # This is tricky because we don't have the accept event here.
+                            # For now, let's just add it to the queue without the ID.
+                            # The turn-in logic will have to find it by OCR text.
+                            logger.info(f"Found pending wing mining mission in depot: {details_text}")
+                            pending_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": 0, "mission_id": None, "ocr_text": details_text})
+                            break # Move to next mission in list
+            self.keys.send('UI_Down')
+
+        self.ap_ckb('log+vce', "Finished scanning mission depot.")
+        return pending_missions
+
 def dummy_cb(msg, body=None):
     pass
 

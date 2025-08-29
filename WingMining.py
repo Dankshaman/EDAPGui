@@ -189,6 +189,12 @@ class WingMining:
             logger.info(f"Found {len(new_missions)} new missions.")
         else:
             logger.info(f"No new missions found at {station_name}.")
+            if not self.current_mission:
+                logger.info("No current mission, checking depot for pending missions.")
+                pending_missions = self.ap.stn_svcs_in_ship.check_mission_depot_for_wing_missions()
+                if pending_missions:
+                    self.mission_queue.extend(pending_missions)
+                    logger.info(f"Found {len(pending_missions)} pending missions in depot.")
 
         self.ap.keys.send("UI_Back", repeat=4)
         sleep(1)
