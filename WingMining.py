@@ -295,8 +295,7 @@ class WingMining:
 
             if ocr_textlist:
                 current_text = " ".join(ocr_textlist)
-                similarity = difflib.SequenceMatcher(None, ocr_text_to_find, current_text).ratio()
-                if similarity > 0.8:
+                if current_text.startswith(ocr_text_to_find):
                     item_found = True
                     break
 
