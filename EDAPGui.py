@@ -276,6 +276,8 @@ class APGui():
             self.radiobuttonvar['debug_mode'].set("Error")
 
         self.checkboxvar['Debug Overlay'].set(self.ed_ap.config['DebugOverlay'])
+        if 'DisableLogFile' in self.ed_ap.config:
+            self.checkboxvar['DisableLogFile'].set(self.ed_ap.config['DisableLogFile'])
 
         # global trap for these keys, the 'end' key will stop any current AP action
         # the 'home' key will start the FSD Assist.  May want another to start SC Assist
@@ -856,6 +858,9 @@ class APGui():
                 self.ed_ap.debug_overlay = True
             else:
                 self.ed_ap.debug_overlay = False
+
+        if field == 'DisableLogFile':
+            self.ed_ap.set_log_file_disabled(self.checkboxvar['DisableLogFile'].get())
 
         if field == 'AutoDockBoost':
             self.ed_ap.autodock_boost = self.checkboxvar['AutoDockBoost'].get()
@@ -1444,6 +1449,9 @@ class APGui():
         rb_debug_error.grid(row=2, column=1, columnspan=2, sticky=(tk.W))
         btn_open_logfile = ttk.Button(blk_debug_settings, text='Open Log File', command=self.open_logfile)
         btn_open_logfile.grid(row=3, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
+        self.checkboxvar['DisableLogFile'] = tk.BooleanVar()
+        cb_disable_log = ttk.Checkbutton(blk_debug_settings, text='Disable Log File', variable=self.checkboxvar['DisableLogFile'], command=(lambda field='DisableLogFile': self.check_cb(field)))
+        cb_disable_log.grid(row=4, column=0, columnspan=2, sticky=(tk.W))
 
         # debug settings block
         blk_single_waypoint_asst = ttk.LabelFrame(page2, text="Single Waypoint Assist", padding=(10, 5))

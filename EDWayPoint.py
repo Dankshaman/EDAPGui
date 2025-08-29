@@ -128,6 +128,9 @@ class EDWayPoint:
                     if 'FleetCarrierTransfer' not in value:
                         logger.warning(f"Waypoint file key '{key}' does not contain 'FleetCarrierTransfer'.")
                         err = True
+                    if 'SellOneAtATime' not in value:
+                        logger.warning(f"Waypoint file key '{key}' does not contain 'SellOneAtATime'.")
+                        value['SellOneAtATime'] = False
                     if 'Skip' not in value:
                         logger.warning(f"Waypoint file key '{key}' does not contain 'Skip'.")
                         err = True
@@ -211,6 +214,7 @@ class EDWayPoint:
         sell_commodities = self.waypoints[dest_key]['SellCommodities']
         buy_commodities = self.waypoints[dest_key]['BuyCommodities']
         fleetcarrier_transfer = self.waypoints[dest_key]['FleetCarrierTransfer']
+        sell_one_at_a_time = self.waypoints[dest_key].get('SellOneAtATime', False)
         global_buy_commodities = self.waypoints['GlobalShoppingList']['BuyCommodities']
 
         if len(sell_commodities) == 0 and len(buy_commodities) == 0 and len(global_buy_commodities) == 0:
@@ -327,12 +331,48 @@ class EDWayPoint:
                         continue
 
                     # Sell the commodity
-                    result, qty = self.ap.stn_svcs_in_ship.sell_commodity(ap.keys, key, sell_commodities[key],
-                                                                          self.cargo_parser)
+                    MAX_RETRIES = 3
+                    for attempt in range(MAX_RETRIES):
+                        result, qty_sold = self.ap.stn_svcs_in_ship.sell_commodity(
+                            ap.keys, key, sell_commodities[key], self.cargo_parser, sell_one_at_a_time
+                        )
 
-                    # Update counts if necessary
-                    if qty > 0 and self.waypoints[dest_key]['UpdateCommodityCount']:
-                        sell_commodities[key] = sell_commodities[key] - qty
+                        # Update counts with what was actually sold
+                        if qty_sold > 0 and self.waypoints[dest_key]['UpdateCommodityCount']:
+                            sell_commodities[key] -= qty_sold
+                        
+                        if result:
+                            break  # Success
+                        
+                        # Failure
+                        if attempt < MAX_RETRIES - 1:
+                            self.ap.ap_ckb('log+vce', f"Failed to sell {key}. Retrying... ({attempt + 1}/{MAX_RETRIES})")
+                            
+                            # --- Recovery Logic ---
+                            ap.ship_control.goto_cockpit_view()
+                            sleep(2)
+                            self.ap.stn_svcs_in_ship.goto_station_services()
+                            
+                            # Re-navigate to commodities market
+                            if ap.jn.ship_state()['cur_station_type'].upper() == "FLEETCARRIER":
+                                ap.keys.send('UI_Right', repeat=2)
+                                ap.keys.send('UI_Select')
+                            elif ap.jn.ship_state()['cur_station_type'].upper() == "OUTPOST":
+                                ap.keys.send('UI_Right')
+                                ap.keys.send('UI_Select')
+                            else:
+                                ap.keys.send('UI_Down')
+                                ap.keys.send('UI_Select')
+                            
+                            sleep(5) # Wait for market to load
+                            
+                            # Re-select the SELL option
+                            self.ap.stn_svcs_in_ship.select_sell(ap.keys)
+                            # --- End Recovery Logic ---
+                        else:
+                            self.ap.ap_ckb('log+vce', f"Failed to sell {key} after {MAX_RETRIES} attempts. Aborting trade at this station.")
+                            ap.ship_control.goto_cockpit_view()
+                            return # Exit execute_trade
 
                 # Save changes
                 self.write_waypoints(data=None, filename='./waypoints/' + Path(self.filename).name)

@@ -8,7 +8,7 @@ import ED_AP
 from MarketParser import MarketParser
 from OCR import OCR
 from StatusParser import StatusParser
-from time import sleep
+from time import sleep, time
 from EDlogger import logger
 from Screen_Regions import reg_scale_for_station, size_scale_for_station
 
@@ -155,7 +155,26 @@ class EDStationServicesInShip:
         Sets the quantity of an item using OCR verification.
         Assumes the UI is on the buy/sell panel.
         """
-        sleep(0.5)  # give time to popup
+        # Wait for the buy/sell panel to appear
+        start_time = time()
+        panel_found = False
+        min_w, min_h = size_scale_for_station(self.commodity_item_size['width'], self.commodity_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+        while time() - start_time < 10:
+            image = self.ocr.capture_region_pct(self.reg['commodities_list'])
+            _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+            if ocr_textlist:
+                ocr_string = str(ocr_textlist).upper()
+                if "BUY" in ocr_string or "SELL" in ocr_string or re.search(r'\d', ocr_string):
+                    panel_found = True
+                    break
+            sleep(0.2)
+            keys.send('UI_Up')  # go up to quantity, try again
+        
+        if not panel_found:
+            self.ap_ckb('log+vce', f"Error: Timed out waiting for buy/sell panel to appear for {name}.")
+            keys.send('UI_Back')
+            return False
+
         keys.send('UI_Up', repeat=2)  # go up to quantity
 
         scl_reg_qty = reg_scale_for_station(self.reg['commodity_quantity'], self.screen.screen_width,
@@ -169,24 +188,43 @@ class EDStationServicesInShip:
         if max_qty:
             keys.send("UI_Right", hold=4)
         else:
-            keys.send('UI_Left', hold=4.0) # Reset to 1
-            sleep(0.2)
-            if act_qty > 1:
-                keys.send('UI_Right', repeat=act_qty - 1, fast=True)
+            # Smart reset to 1
+            keys.send('UI_Left', state=1) # Press and hold left
+            try:
+                start_time = time()
+                qty_is_one = False
+                while time() - start_time < 4: # 4 second timeout
+                    img_qty = self.ocr.capture_region_pct(scl_reg_qty)
+                    gray_image = cv2.cvtColor(img_qty, cv2.COLOR_BGR2GRAY)
+                    _, processed_img = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY_INV)
+                    ocr_text = self.ocr.image_simple_ocr(processed_img)
+                    current_qty = self._parse_quantity(ocr_text)
+                    if current_qty == 0:
+                        qty_is_zero = True
+                        break
+                    sleep(0.1)
+                if not qty_is_zero:
+                    logger.warning("Timed out waiting for quantity to reset to 0.")
+            finally:
+                keys.send('UI_Left', state=0) # Release left
+
+            if act_qty > 0:
+                keys.send('UI_Right', repeat=act_qty, fast=True)
         
         sleep(0.5)
 
-        # Verify final quantity
-        img_qty = self.ocr.capture_region_pct(scl_reg_qty)
-        
-        # --- Custom Image Processing ---
-        gray_image = cv2.cvtColor(img_qty, cv2.COLOR_BGR2GRAY)
-        # For black text on a bright background, we invert the threshold.
-        # This creates a white-on-black image which is ideal for OCR.
-        _, processed_img = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY_INV)
-        # cv2.imwrite(f'test/station-services/qty-processed-{time.time()}.png', processed_img)
-        # --- End Custom Image Processing ---
+        # Skip final verification if max_qty is True (user wants to sell maximum amount)
+        if max_qty:
+            if self.ap.debug_overlay:
+                sleep(1)
+                self.ap.overlay.overlay_remove_rect('commodity_quantity')
+                self.ap.overlay.overlay_paint()
+            return True
 
+        # Final verification
+        img_qty = self.ocr.capture_region_pct(scl_reg_qty)
+        gray_image = cv2.cvtColor(img_qty, cv2.COLOR_BGR2GRAY)
+        _, processed_img = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY_INV)
         ocr_text = self.ocr.image_simple_ocr(processed_img)
         current_qty = self._parse_quantity(ocr_text)
 
@@ -208,13 +246,8 @@ class EDStationServicesInShip:
                 sleep(0.5)
 
                 img_qty = self.ocr.capture_region_pct(scl_reg_qty)
-                
-                # --- Custom Image Processing ---
                 gray_image = cv2.cvtColor(img_qty, cv2.COLOR_BGR2GRAY)
                 _, processed_img = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY_INV)
-                # cv2.imwrite(f'test/station-services/qty-processed-{time.time()}.png', processed_img)
-                # --- End Custom Image Processing ---
-                
                 ocr_text = self.ocr.image_simple_ocr(processed_img)
                 current_qty = self._parse_quantity(ocr_text)
 
@@ -244,8 +277,8 @@ class EDStationServicesInShip:
         # Go to top of list
         last_text = ""
         keys.send('UI_Up', state=1)
-        for _ in range(100):  # Max 10 seconds
-            sleep(0.1)
+        for _ in range(40):  # Max 10 seconds
+            sleep(0.5)
             image = self.ocr.capture_region_pct(list_region)
             _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
             current_text = str(ocr_textlist)
@@ -286,6 +319,29 @@ class EDStationServicesInShip:
             self.ap.overlay.overlay_paint()
 
         return item_found
+
+    def _wait_for_market_list_ready(self, item_name: str, timeout=10) -> bool:
+        """
+        Waits for the market list to be ready by detecting a specific highlighted item.
+        """
+        start_time = time()
+        scl_reg = reg_scale_for_station(self.reg['commodities_list'], self.screen.screen_width,
+                                        self.screen.screen_height)
+        min_w, min_h = size_scale_for_station(self.commodity_item_size['width'], self.commodity_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+
+        while time() - start_time < timeout:
+            image = self.ocr.capture_region_pct(scl_reg)
+            img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+            
+            if img_selected is not None:
+                if ocr_textlist and item_name.upper() in str(ocr_textlist).upper():
+                    logger.debug(f"Market list is ready (item '{item_name}' is highlighted).")
+                    return True
+            
+            sleep(0.2) # Poll every 200ms
+        
+        logger.warning(f"Timed out waiting for '{item_name}' to be highlighted after {timeout}s.")
+        return False
 
     def buy_commodity(self, keys, name: str, qty: int, free_cargo: int) -> tuple[bool, int]:
         """ Buy qty of commodity. If qty >= 9999 then buy as much as possible.
@@ -356,13 +412,14 @@ class EDStationServicesInShip:
 
         return True, act_qty
 
-    def sell_commodity(self, keys, name: str, qty: int, cargo_parser) -> tuple[bool, int]:
+    def sell_commodity(self, keys, name: str, qty: int, cargo_parser, sell_one_at_a_time: bool = False) -> tuple[bool, int]:
         """ Sell qty of commodity. If qty >= 9999 then sell as much as possible.
         Assumed to be in the commodities sell screen in the list.
         @param keys: Keys class for sending keystrokes.
         @param name: Name of the commodity.
         @param qty: Quantity to sell.
         @param cargo_parser: Current cargo to check if rare or demand=1 items exist in hold.
+        @param sell_one_at_a_time: If True, sell items one at a time.
         @return: Sale successful (T/F) and Qty.
         """
 
@@ -403,19 +460,39 @@ class EDStationServicesInShip:
             self.ap_ckb('log+vce', f"Could not find '{name}' on screen in the market.")
             logger.error(f"Could not find '{name}' on screen in the market.")
             return False, 0
+        
+        if sell_one_at_a_time:
+            total_sold = 0
+            for i in range(act_qty):
+                keys.send('UI_Select')  # Select that commodity (it's already highlighted)
 
-        keys.send('UI_Select')  # Select that commodity
+                self.ap_ckb('log+vce', f"Selling 1 unit of {name} ({i + 1}/{act_qty}).")
+                if not self._set_quantity_with_ocr(keys, 1, name, False, False):
+                    # On failure, _set_quantity_with_ocr will have sent UI_Back,
+                    # so we should be on the market list screen.
+                    return False, total_sold
 
-        max_qty = qty >= 9999
-        if not self._set_quantity_with_ocr(keys, act_qty, name, False, max_qty):
-            return False, 0
+                keys.send('UI_Down')
+                keys.send('UI_Select')  # Select Sell
+                
+                if not self._wait_for_market_list_ready(name):
+                    self.ap_ckb('log+vce', f"Error: Timed out waiting for '{name}' to be highlighted after selling a unit.")
+                    return False, total_sold
 
-        keys.send('UI_Down')  # Down to the Sell button (already assume sell all)
-        keys.send('UI_Select')  # Select to Sell all
-        sleep(0.5)
-        # keys.send('UI_Back')  # Back to commodities list
+                total_sold += 1
+            return True, total_sold
+        else:
+            keys.send('UI_Select')  # Select that commodity
+            max_qty = qty >= 9999
+            if not self._set_quantity_with_ocr(keys, act_qty, name, False, max_qty):
+                return False, 0
 
-        return True, act_qty
+            keys.send('UI_Down')  # Down to the Sell button (already assume sell all)
+            keys.send('UI_Select')  # Select to Sell all
+            sleep(0.5)
+            # keys.send('UI_Back')  # Back to commodities list
+
+            return True, act_qty
 
 
     def goto_fleet_carrier_management(self):

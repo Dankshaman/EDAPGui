@@ -14,6 +14,12 @@ if os.path.exists(_filename):
     x = v.strftime('%Y-%m-%d %H-%M-%S')
     os.rename(_filename, f"{filename_only} {x}.log")
 
+    # remove all but the last 2 log files
+    files = sorted(Path('.').glob(f'{filename_only}*.log'), key=os.path.getmtime, reverse=True)
+    if len(files) > 2:
+        for file_to_delete in files[2:]:
+            os.remove(file_to_delete)
+
 # Define the logging config.
 logging.basicConfig(filename=_filename, level=logging.ERROR,
                     format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
