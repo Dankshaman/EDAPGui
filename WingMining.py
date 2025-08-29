@@ -402,3 +402,5 @@ class WingMining:
             in_list = True
             self.ap.keys.send('UI_Down')
             sleep(0.2)
+        
+        return item_found
