@@ -32,6 +32,7 @@ from Overlay import *
 from StatusParser import StatusParser
 from Voice import *
 from Robigo import *
+from WingMining import WingMining
 from TCE_Integration import TceIntegration
 from EDFleetCarrierAP import FleetCarrierAutopilot
 
@@ -203,6 +204,7 @@ class EDAutopilot:
         self.dss_assist_enabled = False
         self.single_waypoint_enabled = False
         self.fc_assist_enabled = False
+        self.wing_mining_assist_enabled = False
 
         # Create instance of each of the needed Classes
         self.gfx_settings = EDGraphicsSettings()
@@ -221,6 +223,7 @@ class EDAutopilot:
         self.ap_ckb = cb
         self.waypoint = EDWayPoint(self, self.jn.ship_state()['odyssey'])
         self.robigo = Robigo(self)
+        self.wing_mining = WingMining(self)
         self.status = StatusParser()
         self.nav_route = NavRouteParser()
         self.ship_control = EDShipControl(self, self.scr, self.keys, cb)
@@ -2252,6 +2255,9 @@ class EDAutopilot:
     def robigo_assist(self):
         self.robigo.loop(self)
 
+    def wing_mining_assist(self):
+        self.wing_mining.run()
+
     # Simply monitor for Shields down so we can boost away or our fighter got destroyed
     # and thus redeploy another one
     def afk_combat_loop(self):
@@ -2284,19 +2290,21 @@ class EDAutopilot:
                     self._prev_star_system = cur_star_system
                     self.update_ap_status("Idle")
 
-    def single_waypoint_assist(self):
-        """ Travel to a system or station or both."""
-        if self._single_waypoint_system == "" and self._single_waypoint_station == "":
+    def travel_to_destination(self, system, station):
+        """ Travel to a system or station or both. This is a blocking call."""
+        if system == "" and station == "":
             return False
 
-        if self._single_waypoint_system != "":
-            self.ap_ckb('log+vce', f"Targeting system {self._single_waypoint_system}.")
+        already_in_system = self.jn.ship_state()['location'] == system
+
+        if system != "" and not already_in_system:
+            self.ap_ckb('log+vce', f"Targeting system {system}.")
             # Select destination in galaxy map based on name
-            res = self.galaxy_map.set_gal_map_destination_text(self, self._single_waypoint_system, self.jn.ship_state)
+            res = self.galaxy_map.set_gal_map_destination_text(self, system, self.jn.ship_state)
             if res:
                 self.ap_ckb('log', f"System has been targeted.")
             else:
-                self.ap_ckb('log+vce', f"Unable to target {self._single_waypoint_system} in Galaxy Map.")
+                self.ap_ckb('log+vce', f"Unable to target {system} in Galaxy Map.")
                 return False
 
             # Jump to destination
@@ -2304,11 +2312,27 @@ class EDAutopilot:
             if res is False:
                 return False
 
-        # Disabled until SC to station enabled.
-        # if self._single_waypoint_station != "":
-        #     res = self.supercruise_to_station(self.scrReg, self._single_waypoint_station)
-        #     if res is False:
-        #         return False
+        if station != "":
+            station_to_find = station
+            if "EXT_PANEL_ColonisationShip;".upper() in station_to_find.upper():
+                parts = station_to_find.split(';')
+                if len(parts) > 1:
+                    station_to_find = parts[1].strip()
+
+            res = self.nav_panel.select_station_by_ocr(station_to_find)
+            if not res:
+                self.ap_ckb('log+vce', f"Unable to set station by Nav-OCR.")
+                return False
+
+            res = self.supercruise_to_station(self.scrReg, station)
+            if res is False:
+                return False
+
+        return True
+
+    def single_waypoint_assist(self):
+        """ Travel to a system or station or both."""
+        self.travel_to_destination(self._single_waypoint_system, self._single_waypoint_station)
 
     # raising an exception to the engine loop thread, so we can terminate its execution
     #  if thread was in a sleep, the exception seems to not be delivered
@@ -2380,6 +2404,14 @@ class EDAutopilot:
         if enable == False and self.fc_assist_enabled == True:
             self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
         self.fc_assist_enabled = enable
+
+    def set_wing_mining_assist(self, enable=True):
+        if not enable and self.wing_mining_assist_enabled:
+            self.wing_mining.stop()
+        self.wing_mining_assist_enabled = enable
+        if enable:
+            # This will also reset the state machine if it was already running
+            self.wing_mining.start()
 
     def set_cv_view(self, enable=True, x=0, y=0):
         self.cv_view = enable
@@ -2594,6 +2626,25 @@ class EDAutopilot:
                 self.fc_assist_enabled = False
                 self.ap_ckb('fc_stop') # This will need to be added to the GUI
                 self.update_overlay()
+
+            elif self.wing_mining_assist_enabled:
+                logger.debug("Running wing_mining_assist")
+                try:
+                    # Non-blocking call to the state machine's run method
+                    self.wing_mining_assist()
+                    # If the state machine puts itself into IDLE or DONE, we can disable the assist.
+                    if self.wing_mining.state == "IDLE" or self.wing_mining.state == "DONE":
+                        self.set_wing_mining_assist(False)
+                        self.ap_ckb('wing_mining_stop')
+                except EDAP_Interrupt:
+                    logger.debug("Caught stop exception for Wing Mining")
+                    self.set_wing_mining_assist(False)
+                    self.ap_ckb('wing_mining_stop')
+                except Exception as e:
+                    print("Trapped generic exception in Wing Mining:"+str(e))
+                    traceback.print_exc()
+                    self.set_wing_mining_assist(False)
+                    self.ap_ckb('wing_mining_stop')
 
             # Check once EDAPGUI loaded to prevent errors logging to the listbox before loaded
             if self.gui_loaded:
