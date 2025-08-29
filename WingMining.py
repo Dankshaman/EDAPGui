@@ -45,8 +45,6 @@ class WingMining:
     def stop(self):
         logger.info("Stopping Wing Mining sequence.")
         self.set_state(STATE_IDLE)
-        if self.ap.single_waypoint_enabled:
-            self.ap.set_single_waypoint_assist(None, None, False)
 
     def reset_mission_counter(self):
         logger.info("Resetting Wing Mining mission counter.")
@@ -112,14 +110,14 @@ class WingMining:
         return self.station_a if self.current_station_idx == 0 else self.station_b
 
     def _handle_travel_to_station(self):
-        if not self.ap.single_waypoint_enabled:
-            station_name = self._get_current_station_name()
-            self.ap.update_ap_status(f"Traveling to station: {station_name}")
-            system, station = station_name.split('/')
-            self.ap.set_single_waypoint_assist(system, station, True)
-        elif self.ap.is_in_station():
-            self.ap.set_single_waypoint_assist(None, None, False)
+        station_name = self._get_current_station_name()
+        self.ap.update_ap_status(f"Traveling to station: {station_name}")
+        system, station = station_name.split('/')
+        if self.ap.travel_to_destination(system, station):
             self.set_state(STATE_GET_MISSIONS)
+        else:
+            # Travel failed, stop the assist
+            self.stop()
 
     def _handle_get_missions(self):
         station_name = self._get_current_station_name()
@@ -147,20 +145,20 @@ class WingMining:
             self.set_state(STATE_SWITCH_STATION)
 
     def _handle_travel_to_fc(self):
-        if not self.ap.single_waypoint_enabled:
-            commodity = self.current_mission['commodity'].lower()
-            fc_name = self.fc_config[self.current_station_idx][commodity]
-            if not fc_name:
-                logger.error(f"No Fleet Carrier configured for {commodity} at station index {self.current_station_idx}")
-                self.stop()
-                return
+        commodity = self.current_mission['commodity'].lower()
+        fc_name = self.fc_config[self.current_station_idx][commodity]
+        if not fc_name:
+            logger.error(f"No Fleet Carrier configured for {commodity} at station index {self.current_station_idx}")
+            self.stop()
+            return
 
-            self.ap.update_ap_status(f"Traveling to FC: {fc_name} for {self.current_mission['commodity']}")
-            system, station = fc_name.split('/')
-            self.ap.set_single_waypoint_assist(system, station, True)
-        elif self.ap.is_in_station():
-            self.ap.set_single_waypoint_assist(None, None, False)
+        self.ap.update_ap_status(f"Traveling to FC: {fc_name} for {self.current_mission['commodity']}")
+        system, station = fc_name.split('/')
+        if self.ap.travel_to_destination(system, station):
             self.set_state(STATE_BUY_COMMODITY)
+        else:
+            # Travel failed, stop the assist
+            self.stop()
 
     def _handle_buy_commodity(self):
         self.ap.update_ap_status(f"Buying {self.current_mission['tonnage']} tons of {self.current_mission['commodity']}")
@@ -168,14 +166,14 @@ class WingMining:
         self.set_state(STATE_TRAVEL_TO_TURN_IN)
 
     def _handle_travel_to_turn_in(self):
-        if not self.ap.single_waypoint_enabled:
-            station_name = self._get_current_station_name()
-            self.ap.update_ap_status(f"Returning to {station_name} to turn in mission.")
-            system, station = station_name.split('/')
-            self.ap.set_single_waypoint_assist(system, station, True)
-        elif self.ap.is_in_station():
-            self.ap.set_single_waypoint_assist(None, None, False)
+        station_name = self._get_current_station_name()
+        self.ap.update_ap_status(f"Returning to {station_name} to turn in mission.")
+        system, station = station_name.split('/')
+        if self.ap.travel_to_destination(system, station):
             self.set_state(STATE_TURN_IN_MISSION)
+        else:
+            # Travel failed, stop the assist
+            self.stop()
 
     def _handle_turn_in_mission(self):
         self.ap.update_ap_status(f"Turning in mission for {self.current_mission['commodity']}")
