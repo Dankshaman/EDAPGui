@@ -102,6 +102,7 @@ class EDAutopilot:
             "EDMesgActionsPort": 15570,
             "EDMesgEventsPort": 15571,
             "DebugOverlay": False,
+            "DisableLogFile": False,
         }
         # NOTE!!! When adding a new config value above, add the same after read_config() to set
         # a default value or an error will occur reading the new value!
@@ -150,6 +151,8 @@ class EDAutopilot:
                 cnf['EDMesgEventsPort'] = 15571
             if 'DebugOverlay' not in cnf:
                 cnf['DebugOverlay'] = False
+            if 'DisableLogFile' not in cnf:
+                cnf['DisableLogFile'] = False
             self.config = cnf
             logger.debug("read AP json:"+str(cnf))
         else:
@@ -187,6 +190,9 @@ class EDAutopilot:
             logger.setLevel(logging.INFO)
         if self.config['LogDEBUG']:
             logger.setLevel(logging.DEBUG)
+
+        if self.config.get('DisableLogFile', False):
+            logger.disabled = True
 
         # initialize all to false
         self.fsd_assist_enabled = False
@@ -786,13 +792,16 @@ class EDAutopilot:
             self.keys.send('UseBoostJuice')
 
         # Cooldown over, get us out of here.
-        self.keys.send('Supercruise')
 
         # Start SCO monitoring
         self.start_sco_monitoring()
 
-        # Wait for jump to supercruise, keep boosting.
+        # Wait for jump to supercruise, keep boosting and re-trying SC key.
         while not self.status.get_flag(FlagsFsdJump):
+            # If not charging, try to engage supercruise
+            if not self.status.get_flag(FlagsFsdCharging):
+                self.keys.send('Supercruise')
+
             self.keys.send('UseBoostJuice')
             sleep(1)
 
@@ -2423,6 +2432,10 @@ class EDAutopilot:
         self.config["LogDEBUG"] = False
         self.config["LogINFO"] = True
         logger.setLevel(logging.INFO)
+
+    def set_log_file_disabled(self, enable=False):
+        self.config["DisableLogFile"] = enable
+        logger.disabled = enable
 
     # quit() is important to call to clean up, if we don't terminate the threads we created the AP will hang on exit
     # have then then kill python exec

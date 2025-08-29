@@ -258,7 +258,7 @@ class EDNavigationPanel:
 
         # Find item in the list
         item_found = False
-        for _ in range(40):  # Max 40 scrolls
+        for _ in range(100):  # Max 100 scrolls
             image = self.ocr.capture_region_pct(list_region)
             _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, scl_row_w, scl_row_h)
 
