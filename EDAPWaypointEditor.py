@@ -158,6 +158,7 @@ class InternalWaypoint:
         self.skip = tk.BooleanVar()
         self.completed = tk.BooleanVar()
         self.comment = tk.StringVar()
+        self.scan_missions = tk.BooleanVar()
 
 class InternalWaypoints:
     def __init__(self):
@@ -262,6 +263,8 @@ class WaypointEditorTab:
         self.update_commodity_count_check.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
         self.fleet_carrier_transfer_check = ttk.Checkbutton(station_options_frame, text="Fleet Carrier Transfer")
         self.fleet_carrier_transfer_check.grid(row=2, column=2, columnspan=2, padx=5, pady=5, sticky="w")
+        self.scan_missions_check = ttk.Checkbutton(station_options_frame, text="Scan Missions")
+        self.scan_missions_check.grid(row=3, column=0, columnspan=2, padx=5, pady=5, sticky="w")
 
         # --- Buy/Sell Commodities ---
         buy_sell_frame = ttk.Frame(bottom_frame)
@@ -476,6 +479,7 @@ class WaypointEditorTab:
                 wp.skip.set(value.get('Skip', False))
                 wp.completed.set(value.get('Completed', False))
                 wp.comment.set(value.get('Comment', ''))
+                wp.scan_missions.set(value.get('ScanMissions', False))
                 wp.buy_commodities = [ShoppingItem(k, v) for k, v in value.get('BuyCommodities', {}).items()]
                 wp.sell_commodities = [ShoppingItem(k, v) for k, v in value.get('SellCommodities', {}).items()]
                 self.waypoints.waypoints.append(wp)
@@ -496,6 +500,7 @@ class WaypointEditorTab:
                 'FleetCarrierTransfer': wp.fleet_carrier_transfer.get(),
                 'Skip': wp.skip.get(),
                 'Completed': wp.completed.get(),
+                'ScanMissions': wp.scan_missions.get(),
                 'Comment': wp.comment.get(),
                 'BuyCommodities': {item.name.get(): item.quantity.get() for item in wp.buy_commodities},
                 'SellCommodities': {item.name.get(): item.quantity.get() for item in wp.sell_commodities}
@@ -535,6 +540,7 @@ class WaypointEditorTab:
             self.system_bookmark_number_entry.config(textvariable=wp.system_bookmark_number)
             self.update_commodity_count_check.config(variable=wp.update_commodity_count)
             self.fleet_carrier_transfer_check.config(variable=wp.fleet_carrier_transfer)
+            self.scan_missions_check.config(variable=wp.scan_missions)
 
             # Update commodity lists
             self.update_commodity_list(wp.buy_commodities, self.buy_commodities_list)
@@ -547,6 +553,7 @@ class WaypointEditorTab:
             self.system_bookmark_number_entry.config(textvariable=None)
             self.update_commodity_count_check.config(variable=None)
             self.fleet_carrier_transfer_check.config(variable=None)
+            self.scan_missions_check.config(variable=None)
 
             self.update_commodity_list([], self.buy_commodities_list)
             self.update_commodity_list([], self.sell_commodities_list)
