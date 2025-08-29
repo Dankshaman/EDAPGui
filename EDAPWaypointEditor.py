@@ -1,691 +1,899 @@
-from __future__ import annotations
-from time import sleep
-from CargoParser import CargoParser
-from EDAP_data import *
-from EDKeys import EDKeys
-from EDlogger import logger
+import tkinter as tk
+from tkinter import ttk, messagebox
 import json
-from MarketParser import MarketParser
-from MousePt import MousePoint
-from pathlib import Path
-from EDNavigationPanel import EDNavigationPanel
+import threading
+import os
+import time
+import csv
+from EDAP_EDMesg_Interface import (
+    create_edap_client, LoadWaypointFileAction,
+    GalaxyMapTargetSystemByNameAction, GalaxyMapTargetStationByBookmarkAction,
+    SystemMapTargetStationByBookmarkAction
+)
 
-"""
-File: EDWayPoint.py    
+class SearchableCombobox(ttk.Frame):
+    def __init__(self, parent, options, on_select_callback):
+        super().__init__(parent)
+        self.root = self.winfo_toplevel()
 
-Description:
-   Class will load file called waypoints.json which contains a list of System name to jump to.
-   Provides methods to select a waypoint pass into it.  
+        self.options = options
+        self.on_select_callback = on_select_callback
+        self.dropdown_id = None
 
-Author: sumzer0@yahoo.com
-"""
+        self.entry = ttk.Entry(self, width=24)
+        self.entry.bind("<KeyRelease>", self.on_entry_key)
+        self.entry.pack(fill="both", expand=True)
 
+        # Use a Toplevel for the dropdown to appear over other widgets
+        self.dropdown_toplevel = tk.Toplevel(self)
+        self.dropdown_toplevel.withdraw()
+        self.dropdown_toplevel.overrideredirect(True)
 
-class EDWayPoint:
-    def __init__(self, ed_ap, is_odyssey=True):
-        self.ap = ed_ap
-        self.is_odyssey = is_odyssey
-        self.filename = './waypoints.json'
-        self.stats_log = {'Colonisation': 0, 'Construction': 0, 'Fleet Carrier': 0, 'Station': 0}
-        self.waypoints = {}
-        #  { "Ninabin": {"DockWithTarget": false, "TradeSeq": None, "Completed": false} }
-        # for i, key in enumerate(self.waypoints):
-        # self.waypoints[target]['DockWithTarget'] == True ... then go into SC Assist
-        # self.waypoints[target]['Completed'] == True
-        # if docked and self.waypoints[target]['Completed'] == False
-        #    execute_seq(self.waypoints[target]['TradeSeq'])
+        # Container for the tree and scrollbar
+        container = ttk.Frame(self.dropdown_toplevel)
+        container.pack(fill="both", expand=True)
 
-        ss = self.read_waypoints()
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(container, orient="vertical")
+        self.treeview = ttk.Treeview(container, columns=("name",), show="headings", height=5, yscrollcommand=scrollbar.set)
+        self.treeview.heading("name", text="Name", anchor="w")
+        self.treeview.column("name", anchor="w")
+        self.treeview.column("#0", width=0, stretch=False)
 
-        # if we read it then point to it, otherwise use the default table above
-        if ss is not None:
-            self.waypoints = ss
-            logger.debug("EDWayPoint: read json:" + str(ss))
+        scrollbar.config(command=self.treeview.yview)
 
-        self.num_waypoints = len(self.waypoints)
+        # Pack them into the container
+        scrollbar.pack(side="right", fill="y")
+        self.treeview.pack(side="left", fill="both", expand=True)
 
-        # print("waypoints: "+str(self.waypoints))
-        self.step = 0
+        self.treeview.bind("<<TreeviewSelect>>", self.on_select)
+        for option in self.options:
+            self.treeview.insert("", "end", values=(option,))
 
-        self.mouse = MousePoint()
-        self.market_parser = MarketParser()
-        self.cargo_parser = CargoParser()
-        self.nav_panel = EDNavigationPanel(ed_ap, ed_ap.scr, ed_ap.keys, ed_ap.ap_ckb)
+    def get(self):
+        return self.entry.get()
 
-    def load_waypoint_file(self, filename=None) -> bool:
-        if filename is None:
-            return False
+    def set(self, value):
+        self.entry.delete(0, tk.END)
+        self.entry.insert(0, value)
 
-        ss = self.read_waypoints(filename)
+    def on_entry_key(self, event):
+        typed_value = self.entry.get().strip().lower()
 
-        if ss is not None:
-            self.waypoints = ss
-            self.filename = filename
-            self.ap.ap_ckb('log', f"Loaded Waypoint file: {filename}")
-            logger.debug("EDWayPoint: read json:" + str(ss))
-            return True
+        # Clear the treeview
+        for item in self.treeview.get_children():
+            self.treeview.delete(item)
 
-        self.ap.ap_ckb('log', f"Waypoint file is invalid. Check log file for details.")
-        return False
-
-    def read_waypoints(self, filename='./waypoints/waypoints.json'):
-        s = None
-        try:
-            with open(filename, "r") as fp:
-                s = json.load(fp)
-
-            # Perform any checks on the data returned
-            # Check if the waypoint data contains the 'GlobalShoppingList' (new requirement)
-            if 'GlobalShoppingList' not in s:
-                # self.ap.ap_ckb('log', f"Waypoint file is invalid. Check log file for details.")
-                logger.warning(f"Waypoint file {filename} is invalid or old version. "
-                               f"It does not contain a 'GlobalShoppingList' waypoint.")
-                s = None
-
-            # Check the
-            err = False
-            for key, value in s.items():
-                if key == 'GlobalShoppingList':
-                    # Special case
-                    if 'BuyCommodities' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'BuyCommodities'.")
-                        err = True
-                    if 'UpdateCommodityCount' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'UpdateCommodityCount'.")
-                        err = True
-                    if 'Skip' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'Skip'.")
-                        err = True
-                else:
-                    # All other cases
-                    if 'SystemName' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'SystemName'.")
-                        err = True
-                    if 'StationName' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'StationName'.")
-                        err = True
-                    if 'GalaxyBookmarkType' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'GalaxyBookmarkType'.")
-                        err = True
-                    if 'GalaxyBookmarkNumber' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'GalaxyBookmarkNumber'.")
-                        err = True
-                    if 'SystemBookmarkType' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'SystemBookmarkType'.")
-                        err = True
-                    if 'SystemBookmarkNumber' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'SystemBookmarkNumber'.")
-                        err = True
-                    if 'SellCommodities' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'SellCommodities'.")
-                        err = True
-                    if 'BuyCommodities' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'BuyCommodities'.")
-                        err = True
-                    if 'UpdateCommodityCount' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'UpdateCommodityCount'.")
-                        err = True
-                    if 'FleetCarrierTransfer' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'FleetCarrierTransfer'.")
-                        err = True
-                    if 'Skip' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'Skip'.")
-                        err = True
-                    if 'Completed' not in value:
-                        logger.warning(f"Waypoint file key '{key}' does not contain 'Completed'.")
-                        err = True
-
-            if err:
-                s = None
-
-        except Exception as e:
-            logger.warning("EDWayPoint.py read_waypoints error :" + str(e))
-
-        return s
-
-    def write_waypoints(self, data, filename='./waypoints/waypoints.json'):
-        if data is None:
-            data = self.waypoints
-        try:
-            with open(filename, "w") as fp:
-                json.dump(data, fp, indent=4)
-        except Exception as e:
-            logger.warning("EDWayPoint.py write_waypoints error:" + str(e))
-
-    def mark_waypoint_complete(self, key):
-        self.waypoints[key]['Completed'] = True
-        self.write_waypoints(data=None, filename='./waypoints/' + Path(self.filename).name)
-
-    def get_waypoint(self) -> tuple[str, dict] | tuple[None, None]:
-        """ Returns the next waypoint list or None if we are at the end of the waypoints.
-        """
-        dest_key = "-1"
-
-        # loop back to beginning if last record is "REPEAT"
-        while dest_key == "-1":
-            for i, key in enumerate(self.waypoints):
-                # skip records we already processed
-                if i < self.step:
-                    continue
-
-                # if this entry is REPEAT (and not skipped), mark them all as Completed = False
-                if ((self.waypoints[key].get('SystemName', "").upper() == "REPEAT")
-                        and not self.waypoints[key]['Skip']):
-                    self.mark_all_waypoints_not_complete()
-                    break
-
-                # if this step is marked to skip... i.e. completed, go to next step
-                if (key == "GlobalShoppingList" or self.waypoints[key]['Completed']
-                        or self.waypoints[key]['Skip']):
-                    continue
-
-                # This is the next uncompleted step
-                self.step = i
-                dest_key = key
-                break
-            else:
-                return None, None
-
-        return dest_key, self.waypoints[dest_key]
-
-    def mark_all_waypoints_not_complete(self):
-        for j, tkey in enumerate(self.waypoints):
-            # Ensure 'Completed' key exists before trying to set it
-            if 'Completed' in self.waypoints[tkey]:
-                self.waypoints[tkey]['Completed'] = False
-            else:
-                # Handle legacy format where 'Completed' might be missing
-                # Or log a warning if the structure is unexpected
-                logger.warning(f"Waypoint {tkey} missing 'Completed' key during reset.")
-            self.step = 0
-        self.write_waypoints(data=None, filename='./waypoints/' + Path(self.filename).name)
-        self.log_stats()
-
-    def log_stats(self):
-        calc1 = 1.5 ** self.stats_log['Colonisation']
-        calc2 = 1.5 ** self.stats_log['Construction']
-        sleep(max(calc1, calc2))
-
-    def execute_trade(self, ap, dest_key):
-        # Get trade commodities from waypoint
-        sell_commodities = self.waypoints[dest_key]['SellCommodities']
-        buy_commodities = self.waypoints[dest_key]['BuyCommodities']
-        fleetcarrier_transfer = self.waypoints[dest_key]['FleetCarrierTransfer']
-        global_buy_commodities = self.waypoints['GlobalShoppingList']['BuyCommodities']
-
-        if len(sell_commodities) == 0 and len(buy_commodities) == 0 and len(global_buy_commodities) == 0:
-            return
-
-        # Does this place have commodities service?
-        # From the journal, this works for stations (incl. outpost), colonisation ship and megaships
-        if ap.jn.ship_state()['StationServices'] is not None:
-            if 'commodities' not in ap.jn.ship_state()['StationServices']:
-                self.ap.ap_ckb('log', f"No commodities market at docked location.")
-                return
+        # Repopulate with filtered options
+        if not typed_value:
+            for option in self.options:
+                self.treeview.insert("", "end", values=(option,))
         else:
-            self.ap.ap_ckb('log', f"No station services at docked location.")
+            filtered_options = [option for option in self.options if option.lower().startswith(typed_value)]
+            for option in filtered_options:
+                self.treeview.insert("", "end", values=(option,))
+        self.show_dropdown()
+
+    def on_select(self, event):
+        selected_item = self.treeview.selection()
+        if selected_item:
+            selected_option = self.treeview.item(selected_item[0], "values")[0]
+            self.set(selected_option)
+            self.hide_dropdown()
+            if self.on_select_callback:
+                self.on_select_callback(selected_option)
+
+    def on_root_click(self, event):
+        # Check if the click was inside the entry or the dropdown
+        x, y = event.x_root, event.y_root
+
+        # Check entry widget
+        entry_x, entry_y = self.entry.winfo_rootx(), self.entry.winfo_rooty()
+        entry_w, entry_h = self.entry.winfo_width(), self.entry.winfo_height()
+        in_entry = (entry_x <= x < entry_x + entry_w) and (entry_y <= y < entry_y + entry_h)
+
+        # Check dropdown toplevel (only if it's visible)
+        in_dropdown = False
+        if self.dropdown_toplevel.winfo_viewable():
+            dd_x, dd_y = self.dropdown_toplevel.winfo_rootx(), self.dropdown_toplevel.winfo_rooty()
+            dd_w, dd_h = self.dropdown_toplevel.winfo_width(), self.dropdown_toplevel.winfo_height()
+            in_dropdown = (dd_x <= x < dd_x + dd_w) and (dd_y <= y < dd_y + dd_h)
+
+        if not in_entry and not in_dropdown:
+            self.hide_dropdown()
+
+    def show_dropdown(self, event=None):
+        self.update_idletasks() # Ensure widget dimensions are up-to-date
+        x = self.winfo_rootx()
+        y = self.winfo_rooty() + self.winfo_height()
+        width = self.winfo_width()
+
+        self.dropdown_toplevel.geometry(f"{width}x{self.treeview.winfo_reqheight()}+{x}+{y}")
+        self.dropdown_toplevel.deiconify()
+        self.dropdown_toplevel.lift()
+        self.root.bind("<Button-1>", self.on_root_click, add="+")
+
+    def hide_dropdown(self):
+        self.root.unbind("<Button-1>")
+        self.dropdown_toplevel.withdraw()
+        self.entry.selection_clear()
+
+ALL_COMMODITIES = [
+    "ALL", "Agronomic Treatment", "Explosives", "Hydrogen Fuel", "Hydrogen Peroxide", "Liquid Oxygen", "Mineral Oil", "Nerve Agents", "Pesticides", "Rockforth Fertiliser", "Surface Stabilisers", "Synthetic Reagents", "Tritium", "Water",
+    "Clothing", "Consumer Technology", "Domestic Appliances", "Evacuation Shelter", "Survival Equipment",
+    "Algae", "Animal Meat", "Coffee", "Fish", "Food Cartridges", "Fruit and Vegetables", "Grain", "Synthetic Meat", "Tea",
+    "Ceramic Composites", "CMM Composite", "Insulating Membrane", "Meta-Alloys", "Micro-Weave Cooling Hoses", "Neofabric Insulation", "Polymers", "Semiconductors", "Superconductors",
+    "Beer", "Bootleg Liquor", "Liquor", "Narcotics", "Onionhead Gamma Strain", "Tobacco", "Wine",
+    "Articulation Motors", "Atmospheric Processors", "Building Fabricators", "Crop Harvesters", "Emergency Power Cells", "Energy Grid Assembly", "Exhaust Manifold", "Geological Equipment", "Heatsink Interlink", "HN Shock Mount", "Magnetic Emitter Coil", "Marine Equipment", "Microbial Furnaces", "Mineral Extractors", "Modular Terminals", "Power Converter", "Power Generators", "Power Transfer Bus", "Radiation Baffle", "Reinforced Mounting Plate", "Skimmer Components", "Thermal Cooling Units", "Water Purifiers",
+    "Advanced Medicines", "Agri-Medicines", "Basic Medicines", "Combat Stabilisers", "Performance Enhancers", "Progenitor Cells",
+    "Aluminium", "Beryllium", "Bismuth", "Cobalt", "Copper", "Gallium", "Gold", "Hafnium 178", "Indium", "Lanthanum", "Lithium", "Osmium", "Palladium", "Platinum", "Platinum Alloy", "Praseodymium", "Samarium", "Silver", "Steel", "Tantalum", "Thallium", "Thorium", "Titanium", "Uranium",
+    "Alexandrite", "Bauxite", "Benitoite", "Bertrandite", "Bromellite", "Coltan", "Cryolite", "Gallite", "Goslarite", "Grandidierite", "Indite", "Jadeite", "Lepidolite", "Lithium Hydroxide", "Low Temperature Diamonds", "Methane Clathrate", "Methanol Monohydrate Crystals", "Moissanite", "Monazite", "Musgravite", "Painite", "Pyrophyllite", "Rhodplumsite", "Rutile", "Serendibite", "Taaffeite", "Uraninite", "Void Opals",
+    "AI Relics", "Ancient Artefact", "Ancient Key", "Anomaly Particles", "Antimatter Containment Unit", "Antique Jewellery", "Antiquities", "Assault Plans", "Black Box", "Commercial Samples", "Damaged Escape Pod", "Data Core", "Diplomatic Bag", "Earth Relics", "Encrypted Correspondence", "Encrypted Data Storage", "Experimental Chemicals", "Fossil Remnants", "Gene Bank", "Geological Samples", "Guardian Casket", "Guardian Orb", "Guardian Relic", "Guardian Tablet", "Guardian Totem", "Guardian Urn", "Hostage", "Large Survey Data Cache", "Military Intelligence", "Military Plans", "Mollusc Brain Tissue", "Mollusc Fluid", "Mollusc Membrane", "Mollusc Mycelium", "Mollusc Soft Tissue", "Mollusc Spores", "Mysterious Idol", "Occupied Escape Pod", "Personal Effects", "Pod Core Tissue", "Pod Dead Tissue", "Pod Mesoglea", "Pod Outer Tissue", "Pod Shell Tissue", "Pod Surface Tissue", "Pod Tissue", "Political Prisoner", "Precious Gems", "Prohibited Research Materials", "Prototype Tech", "Rare Artwork", "Rebel Transmissions", "SAP 8 Core Container", "Scientific Research", "Scientific Samples", "Small Survey Data Cache", "Space Pioneer Relics", "Tactical Data", "Technical Blueprints", "Thargoid Basilisk Tissue Sample", "Thargoid Biological Matter", "Thargoid Bio-Storage Capsule", "Thargoid Cyclops Tissue Sample", "Thargoid Glaive Tissue Sample", "Thargoid Heart", "Thargoid Hydra Tissue Sample", "Thargoid Link", "Thargoid Orthrus Tissue Sample", "Thargoid Probe", "Thargoid Resin", "Thargoid Sensor", "Thargoid Medusa Tissue Sample", "Thargoid Scout Tissue Sample", "Thargoid Technology Samples", "Time Capsule", "Titan Deep Tissue Sample", "Titan Maw Deep Tissue Sample", "Titan Maw Partial Tissue Sample", "Titan Maw Tissue Sample", "Titan Partial Tissue Sample", "Titan Tissue Sample", "Trade Data", "Trinkets of Hidden Fortune", "Unclassified Relic", "Unoccupied Escape Pod", "Unstable Data Core", "Wreckage Components",
+    "Imperial Slaves", "Slaves",
+    "Advanced Catalysers", "Animal Monitors", "Aquaponic Systems", "Auto Fabricators", "Bioreducing Lichen", "Computer Components", "H.E. Suits", "Hardware Diagnostic Sensor", "Ion Distributor", "Land Enrichment Systems", "Medical Diagnostic Equipment", "Micro Controllers", "Muon Imager", "Nanobreakers", "Resonating Separators", "Robotics", "Structural Regulators", "Telemetry Suite",
+    "Conductive Fabrics", "Leather", "Military Grade Fabrics", "Natural Fabrics", "Synthetic Fabrics",
+    "Biowaste", "Chemical Waste", "Scrap", "Toxic Waste",
+    "Battle Weapons", "Landmines", "Non Lethal Weapons", "Personal Weapons", "Reactive Armour"
+]
+ALL_COMMODITIES.sort()
+
+class ShoppingItem:
+    def __init__(self, name="", quantity=0):
+        self.name = tk.StringVar(value=name)
+        self.quantity = tk.IntVar(value=quantity)
+
+class InternalWaypoint:
+    def __init__(self, name="", system_name="", station_name=""):
+        self.name = tk.StringVar(value=name)
+        self.system_name = tk.StringVar(value=system_name)
+        self.station_name = tk.StringVar(value=station_name)
+        self.galaxy_bookmark_type = tk.StringVar()
+        self.galaxy_bookmark_number = tk.IntVar()
+        self.system_bookmark_type = tk.StringVar()
+        self.system_bookmark_number = tk.IntVar()
+        self.sell_commodities = []
+        self.buy_commodities = []
+        self.update_commodity_count = tk.BooleanVar()
+        self.fleet_carrier_transfer = tk.BooleanVar()
+        self.skip = tk.BooleanVar()
+        self.completed = tk.BooleanVar()
+        self.comment = tk.StringVar()
+        self.scan_missions = tk.BooleanVar()
+
+class InternalWaypoints:
+    def __init__(self):
+        self.waypoints = []
+
+
+class WaypointEditorTab:
+    def __init__(self, parent, ed_waypoint):
+        self.ed_waypoint = ed_waypoint
+        self.waypoints = InternalWaypoints()
+        self.frame = ttk.Frame(parent)
+        self.file_watcher_thread = None
+        self.watching_filepath = None
+        self.last_modified_time = None
+        self.mesg_client = create_edap_client(15570, 15571)
+
+        self.root = self.frame.winfo_toplevel()
+
+        # --- Waypoints Tab ---
+        self.create_waypoints_tab()
+
+    def create_waypoints_tab(self):
+        # Main container for the waypoints tab
+        waypoints_container = ttk.Frame(self.frame)
+        waypoints_container.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # File operations buttons
+        file_ops_frame = ttk.Frame(waypoints_container)
+        file_ops_frame.pack(fill="x", pady=5)
+        ttk.Button(file_ops_frame, text="New", command=self.new_file).pack(side="left", padx=2)
+        ttk.Button(file_ops_frame, text="Open", command=self.open_file).pack(side="left", padx=2)
+        self.save_button = ttk.Button(file_ops_frame, text="Save", command=self.save_file)
+        self.save_button.pack(side="left", padx=2)
+        self.save_button.config(state="disabled")
+        ttk.Button(file_ops_frame, text="Save As", command=self.save_as_file).pack(side="left", padx=2)
+        ttk.Button(file_ops_frame, text="Import Spansh CSV", command=self.import_spansh_csv).pack(side="left", padx=2)
+        ttk.Button(file_ops_frame, text="Import from Inara", command=self.open_inara_import_window).pack(side="left", padx=2)
+
+        # Top frame for waypoints list and buttons
+        top_frame = ttk.Frame(waypoints_container)
+        top_frame.pack(fill="x", expand=False, pady=5)
+
+        # Waypoints list (Treeview)
+        columns = ("system_name", "station_name", "skip", "completed")
+        self.waypoints_tree = ttk.Treeview(top_frame, columns=columns, show="headings")
+
+        self.waypoints_tree.heading("system_name", text="System Name")
+        self.waypoints_tree.heading("station_name", text="Station Name")
+        self.waypoints_tree.heading("skip", text="Skip")
+        self.waypoints_tree.heading("completed", text="Completed")
+
+        self.waypoints_tree.column("system_name", width=200)
+        self.waypoints_tree.column("station_name", width=200)
+        self.waypoints_tree.column("skip", width=50, anchor=tk.CENTER)
+        self.waypoints_tree.column("completed", width=70, anchor=tk.CENTER)
+
+        self.waypoints_tree.pack(side="left", fill="both", expand=True)
+
+        self.waypoints_tree.bind("<<TreeviewSelect>>", self.on_waypoint_select)
+        self.waypoints_tree.bind("<Double-1>", self.on_cell_double_click)
+        self.waypoints_tree.bind("<Button-1>", self.on_tree_click)
+
+        # Waypoint buttons
+        waypoint_buttons_frame = ttk.Frame(top_frame)
+        waypoint_buttons_frame.pack(side="right", fill="y", padx=(5,0))
+
+        ttk.Button(waypoint_buttons_frame, text="Up", command=self.move_waypoint_up).pack(padx=5, pady=2, fill="x")
+        ttk.Button(waypoint_buttons_frame, text="Down", command=self.move_waypoint_down).pack(padx=5, pady=2, fill="x")
+        ttk.Button(waypoint_buttons_frame, text="Add", command=self.add_waypoint).pack(padx=5, pady=2, fill="x")
+        ttk.Button(waypoint_buttons_frame, text="Del", command=self.delete_waypoint).pack(padx=5, pady=2, fill="x")
+
+        # Bottom frame for waypoint options and commodity lists
+        bottom_frame = ttk.Frame(waypoints_container)
+        bottom_frame.pack(fill="both", expand=True, pady=5)
+
+        # Waypoint Options
+        waypoint_options_frame = ttk.LabelFrame(bottom_frame, text="Waypoint Options")
+        waypoint_options_frame.pack(side="top", fill="x", expand=False, padx=0, pady=0)
+
+        # Station Options
+        station_options_frame = ttk.LabelFrame(waypoint_options_frame, text="Station Options")
+        station_options_frame.pack(fill="x", padx=5, pady=5)
+
+        # Galaxy Bookmark
+        ttk.Label(station_options_frame, text="Galaxy Bookmark Type:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        self.galaxy_bookmark_type_combo = ttk.Combobox(station_options_frame, values=["", "Favorite", "System", "Body", "Station", "Settlement"])
+        self.galaxy_bookmark_type_combo.grid(row=0, column=1, padx=5, pady=2, sticky="ew")
+        ttk.Label(station_options_frame, text="Galaxy Bookmark Number:").grid(row=0, column=2, padx=5, pady=2, sticky="w")
+        self.galaxy_bookmark_number_entry = ttk.Entry(station_options_frame)
+        self.galaxy_bookmark_number_entry.grid(row=0, column=3, padx=5, pady=2, sticky="ew")
+
+        # System Bookmark
+        ttk.Label(station_options_frame, text="System Bookmark Type:").grid(row=1, column=0, padx=5, pady=2, sticky="w")
+        self.system_bookmark_type_combo = ttk.Combobox(station_options_frame, values=["", "Favorite", "Body", "Station", "Settlement", "Nav-OCR", "Navigation Panel"])
+        self.system_bookmark_type_combo.grid(row=1, column=1, padx=5, pady=2, sticky="ew")
+        ttk.Label(station_options_frame, text="System Bookmark Number:").grid(row=1, column=2, padx=5, pady=2, sticky="w")
+        self.system_bookmark_number_entry = ttk.Entry(station_options_frame)
+        self.system_bookmark_number_entry.grid(row=1, column=3, padx=5, pady=2, sticky="ew")
+
+        # Checkboxes
+        self.update_commodity_count_check = ttk.Checkbutton(station_options_frame, text="Update Commodity Count")
+        self.update_commodity_count_check.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+        self.fleet_carrier_transfer_check = ttk.Checkbutton(station_options_frame, text="Fleet Carrier Transfer")
+        self.fleet_carrier_transfer_check.grid(row=2, column=2, columnspan=2, padx=5, pady=5, sticky="w")
+        self.scan_missions_check = ttk.Checkbutton(station_options_frame, text="Scan Missions")
+        self.scan_missions_check.grid(row=3, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
+        # --- Buy/Sell Commodities ---
+        buy_sell_frame = ttk.Frame(bottom_frame)
+        buy_sell_frame.pack(side="top", fill="both", expand=True, pady=(5,0))
+
+        # Buy Commodities
+        buy_commodities_frame = ttk.LabelFrame(buy_sell_frame, text="Buy Commodities")
+        buy_commodities_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        self.buy_commodities_list = self.create_commodity_list(buy_commodities_frame, "buy")
+
+        # Sell Commodities
+        sell_commodities_frame = ttk.LabelFrame(buy_sell_frame, text="Sell Commodities")
+        sell_commodities_frame.pack(side="right", fill="both", expand=True, padx=(5, 0))
+        self.sell_commodities_list = self.create_commodity_list(sell_commodities_frame, "sell")
+
+    def open_inara_import_window(self):
+        inara_window = tk.Toplevel(self.frame)
+        inara_window.title("Import from Inara")
+        inara_window.transient(self.root)
+        inara_window.grab_set()
+
+        frame = ttk.Frame(inara_window)
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        ttk.Label(frame, text="Paste Inara trade route data here:").pack(anchor="w")
+        inara_text = tk.Text(frame, height=10)
+        inara_text.pack(fill="x", pady=5)
+        inara_text.focus_set()
+
+        def on_add():
+            self.add_inara_route(inara_text.get("1.0", "end-1c"))
+            inara_window.destroy()
+
+        ttk.Button(frame, text="Add to Waypoints", command=on_add).pack(pady=5)
+
+    def create_commodity_list(self, parent, list_type):
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True)
+
+        columns = ("name", "quantity")
+        tree = ttk.Treeview(frame, columns=columns, show="headings")
+        tree.heading("name", text="Name")
+        tree.heading("quantity", text="Quantity")
+        tree.column("name", width=150)
+        tree.column("quantity", width=70, anchor=tk.E)
+        tree.pack(side="left", fill="both", expand=True)
+
+        tree.bind("<Double-1>", lambda event, lt=list_type: self.on_commodity_cell_double_click(event, lt))
+
+        buttons_frame = ttk.Frame(frame)
+        buttons_frame.pack(side="right", fill="y", padx=(5,0))
+
+        if list_type == "buy":
+            ttk.Button(buttons_frame, text="Up", command=self.move_buy_commodity_up).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text="Down", command=self.move_buy_commodity_down).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text="Add", command=self.add_buy_commodity).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text="Del", command=self.delete_buy_commodity).pack(padx=5, pady=2, fill="x")
+        elif list_type == "sell":
+            ttk.Button(buttons_frame, text="Up", command=self.move_sell_commodity_up).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text="Down", command=self.move_sell_commodity_down).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text="Add", command=self.add_sell_commodity).pack(padx=5, pady=2, fill="x")
+            ttk.Button(buttons_frame, text="Del", command=self.delete_sell_commodity).pack(padx=5, pady=2, fill="x")
+
+        return tree
+
+    def new_file(self):
+        self.waypoints = InternalWaypoints()
+        self.ed_waypoint.waypoints = {}
+        self.ed_waypoint.filename = None
+        self.update_ui()
+        self.save_button.config(state="disabled")
+
+    def open_file(self):
+        from tkinter import filedialog
+        filepath = filedialog.askopenfilename(
+            title="Open Waypoint File",
+            filetypes=(("JSON files", "*.json"), ("All files", "*.*")),
+            initialdir="./waypoints"
+        )
+        if filepath:
+            self.load_waypoint_file(filepath)
+            self.save_button.config(state="normal")
+
+    def save_file(self):
+        if self.ed_waypoint.filename:
+            self.save_waypoint_file(self.ed_waypoint.filename)
+
+    def save_as_file(self):
+        from tkinter import filedialog
+        filepath = filedialog.asksaveasfilename(
+            title="Save Waypoint File",
+            filetypes=(("JSON files", "*.json"), ("All files", "*.*")),
+            initialdir="./waypoints",
+            defaultextension=".json"
+        )
+        if filepath:
+            self.save_waypoint_file(filepath)
+            self.save_button.config(state="normal")
+
+    def import_spansh_csv(self):
+        from tkinter import filedialog
+        filepath = filedialog.askopenfilename(
+            title="Import Spansh CSV File",
+            filetypes=(("CSV files", "*.csv"), ("All files", "*.*")),
+        )
+        if not filepath:
             return
 
-        # Determine type of station we are at
-        colonisation_ship = "ColonisationShip".upper() in ap.jn.ship_state()['cur_station'].upper()
-        orbital_construction_site = ap.jn.ship_state()['cur_station_type'].upper() == "SpaceConstructionDepot".upper()
-        fleet_carrier = ap.jn.ship_state()['cur_station_type'].upper() == "FleetCarrier".upper()
-        outpost = ap.jn.ship_state()['cur_station_type'].upper() == "Outpost".upper()
+        try:
+            with open(filepath, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    system_name = row.get("System Name")
+                    if system_name:
+                        # Use system name for both waypoint name and system name for simplicity
+                        new_waypoint = InternalWaypoint(name=system_name, system_name=system_name)
+                        self.waypoints.waypoints.append(new_waypoint)
+            self.update_waypoints_list()
+            messagebox.showinfo("Import Successful", f"Imported waypoints from {os.path.basename(filepath)}")
+        except Exception as e:
+            messagebox.showerror("Import Error", f"Failed to import CSV file: {e}")
 
-        if colonisation_ship or orbital_construction_site:
-            if colonisation_ship:
-                # Colonisation Ship
-                self.stats_log['Colonisation'] = self.stats_log['Colonisation'] + 1
-                self.ap.ap_ckb('log', f"Executing trade with Colonisation Ship.")
-                logger.debug(f"Execute Trade: On Colonisation Ship")
-            if orbital_construction_site:
-                # Construction Ship
-                self.stats_log['Construction'] = self.stats_log['Construction'] + 1
-                self.ap.ap_ckb('log', f"Executing trade with Orbital Construction Ship.")
-                logger.debug(f"Execute Trade: On Orbital Construction Site")
+    def load_waypoint_file(self, filepath):
+        try:
+            if self.ed_waypoint.load_waypoint_file(filepath):
+                self.populate_internal_waypoints()
+                self.update_ui()
+                self.start_file_watcher(filepath)
+        except json.JSONDecodeError:
+            messagebox.showerror("Error", f"Invalid JSON file: {filepath}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load waypoint file: {e}")
 
-            # Go to station services
-            self.ap.stn_svcs_in_ship.goto_construction_services()
+    def save_waypoint_file(self, filepath):
+        waypoints_to_save = {}
 
-            # --------- SELL ----------
-            if len(sell_commodities) > 0:
-                # Sell all to colonisation/construction ship
-                self.sell_to_colonisation_ship(ap)
-
-        elif fleet_carrier and fleetcarrier_transfer:
-            # Fleet Carrier in Transfer mode
-            self.stats_log['Fleet Carrier'] = self.stats_log['Fleet Carrier'] + 1
-            # --------- SELL ----------
-            if len(sell_commodities) > 0:
-                # Transfer to Fleet Carrier
-                self.ap.internal_panel.transfer_to_fleetcarrier(ap)
-
-            # --------- BUY ----------
-            if len(buy_commodities) > 0:
-                self.ap.internal_panel.transfer_from_fleetcarrier(ap, buy_commodities)
-
+        # Add or preserve GlobalShoppingList at the top
+        if 'GlobalShoppingList' in self.ed_waypoint.waypoints:
+            waypoints_to_save['GlobalShoppingList'] = self.ed_waypoint.waypoints['GlobalShoppingList']
         else:
-            # Regular Station or Fleet Carrier in Buy/Sell mode
-            self.ap.ap_ckb('log', "Executing trade.")
-            logger.debug(f"Execute Trade: On Regular Station")
-            self.stats_log['Station'] = self.stats_log['Station'] + 1
+            # Add default GlobalShoppingList for new files
+            waypoints_to_save['GlobalShoppingList'] = {
+                "SystemName": "",
+                "StationName": "",
+                "GalaxyBookmarkType": "",
+                "GalaxyBookmarkNumber": 0,
+                "SystemBookmarkType": "",
+                "SystemBookmarkNumber": 0,
+                "SellCommodities": {},
+                "BuyCommodities": {},
+                "Comment": None,
+                "UpdateCommodityCount": True,
+                "FleetCarrierTransfer": False,
+                "Skip": True,
+                "Completed": False
+            }
 
-            market_time_old = ""
-            data = self.market_parser.get_market_data()
-            if data is not None:
-                market_time_old = self.market_parser.current_data['timestamp']
+        # Add the rest of the waypoints
+        other_waypoints = self.convert_to_raw_waypoints()
+        if 'GlobalShoppingList' in other_waypoints:
+            del other_waypoints['GlobalShoppingList']
+        waypoints_to_save.update(other_waypoints)
 
-            # We start off on the Main Menu in the Station
-            self.ap.stn_svcs_in_ship.goto_station_services()
+        self.ed_waypoint.write_waypoints(waypoints_to_save, filepath)
+        self.ed_waypoint.filename = filepath
+        self.mesg_client.publish(LoadWaypointFileAction(filepath=filepath))
 
-            # CONNECTED TO menu is different between stations and fleet carriers
-            if fleet_carrier:
-                # Fleet Carrier COMMODITIES MARKET location top right, with:
-                # uni cart, redemption, trit depot, shipyard, crew lounge
-                ap.keys.send('UI_Right', repeat=2)
-                ap.keys.send('UI_Select')  # Select Commodities
+    def start_file_watcher(self, filepath):
+        if self.file_watcher_thread and self.file_watcher_thread.is_alive():
+            # Stop the previous watcher if it's running
+            self.watching_filepath = None # This will stop the loop in the thread
+            self.file_watcher_thread.join()
 
-            elif outpost:
-                # Outpost COMMODITIES MARKET location in middle column
-                ap.keys.send('UI_Right')
-                ap.keys.send('UI_Select')  # Select Commodities
+        self.watching_filepath = filepath
+        self.last_modified_time = os.path.getmtime(filepath)
 
-            else:
-                # Orbital station COMMODITIES MARKET location bottom left
-                ap.keys.send('UI_Down')
-                ap.keys.send('UI_Select')  # Select Commodities
+        self.file_watcher_thread = threading.Thread(target=self.watch_file, daemon=True)
+        self.file_watcher_thread.start()
 
-            self.ap.ap_ckb('log+vce', "Downloading commodities data from market.")
+    def watch_file(self):
+        while self.watching_filepath:
+            try:
+                modified_time = os.path.getmtime(self.watching_filepath)
+                if modified_time != self.last_modified_time:
+                    self.last_modified_time = modified_time
+                    # File has changed, reload it
+                    # We need to schedule the reload on the main thread
+                    self.frame.after(0, self.load_waypoint_file, self.watching_filepath)
+            except FileNotFoundError:
+                # The file might have been deleted
+                self.watching_filepath = None
 
-            # Wait for market to update
-            market_time_new = ""
-            data = self.market_parser.get_market_data()
-            if data is not None:
-                market_time_new = self.market_parser.current_data['timestamp']
+            time.sleep(1) # Poll every second
 
-            while market_time_new == market_time_old:
-                market_time_new = ""
-                data = self.market_parser.get_market_data()
-                if data is not None:
-                    market_time_new = self.market_parser.current_data['timestamp']
-                sleep(1)  # wait for new menu to finish rendering
+    def populate_internal_waypoints(self):
+        self.waypoints = InternalWaypoints()
+        raw_waypoints = self.ed_waypoint.waypoints
 
-            cargo_capacity = ap.jn.ship_state()['cargo_capacity']
-            logger.info(f"Execute trade: Ship's max cargo capacity: {cargo_capacity}")
-
-            # --------- SELL ----------
-            if len(sell_commodities) > 0:
-                # Select the SELL option
-                self.ap.stn_svcs_in_ship.select_sell(ap.keys)
-
-                for i, key in enumerate(sell_commodities):
-                    # Check if we have any of the item to sell
-                    self.cargo_parser.get_cargo_data()
-                    cargo_item = self.cargo_parser.get_item(key)
-                    if cargo_item is None:
-                        logger.info(f"Unable to sell {key}. None in cargo hold.")
-                        continue
-
-                    # Sell the commodity
-                    result, qty = self.ap.stn_svcs_in_ship.sell_commodity(ap.keys, key, sell_commodities[key],
-                                                                          self.cargo_parser)
-
-                    # Update counts if necessary
-                    if qty > 0 and self.waypoints[dest_key]['UpdateCommodityCount']:
-                        sell_commodities[key] = sell_commodities[key] - qty
-
-                # Save changes
-                self.write_waypoints(data=None, filename='./waypoints/' + Path(self.filename).name)
-
-            sleep(1)
-
-            # --------- BUY ----------
-            if len(buy_commodities) > 0 or len(global_buy_commodities) > 0:
-                # Select the BUY option
-                self.ap.stn_svcs_in_ship.select_buy(ap.keys)
-
-                # Go through buy commodities list
-                for i, key in enumerate(buy_commodities):
-                    curr_cargo_qty = int(ap.status.get_cleaned_data()['Cargo'])
-                    cargo_timestamp = ap.status.current_data['timestamp']
-
-                    free_cargo = cargo_capacity - curr_cargo_qty
-                    logger.info(f"Execute trade: Free cargo space: {free_cargo}")
-
-                    if free_cargo == 0:
-                        logger.info(f"Execute trade: No space for additional cargo")
-                        break
-
-                    qty_to_buy = buy_commodities[key]
-                    logger.info(f"Execute trade: Shopping list requests {qty_to_buy} units of {key}")
-
-                    # Attempt to buy the commodity
-                    result, qty = self.ap.stn_svcs_in_ship.buy_commodity(ap.keys, key, qty_to_buy, free_cargo)
-                    logger.info(f"Execute trade: Bought {qty} units of {key}")
-
-                    # If we bought any goods, wait for status file to update with
-                    # new cargo count for next commodity
-                    if qty > 0:
-                        ap.status.wait_for_file_change(cargo_timestamp, 5)
-
-                    # Update counts if necessary
-                    if qty > 0 and self.waypoints[dest_key]['UpdateCommodityCount']:
-                        buy_commodities[key] = qty_to_buy - qty
-
-                # Go through global buy commodities list
-                for i, key in enumerate(global_buy_commodities):
-                    curr_cargo_qty = int(ap.status.get_cleaned_data()['Cargo'])
-                    cargo_timestamp = ap.status.current_data['timestamp']
-
-                    free_cargo = cargo_capacity - curr_cargo_qty
-                    logger.info(f"Execute trade: Free cargo space: {free_cargo}")
-
-                    if free_cargo == 0:
-                        logger.info(f"Execute trade: No space for additional cargo")
-                        break
-
-                    qty_to_buy = global_buy_commodities[key]
-                    logger.info(f"Execute trade: Global shopping list requests {qty_to_buy} units of {key}")
-
-                    # Attempt to buy the commodity
-                    result, qty = self.ap.stn_svcs_in_ship.buy_commodity(ap.keys, key, qty_to_buy, free_cargo)
-                    logger.info(f"Execute trade: Bought {qty} units of {key}")
-
-                    # If we bought any goods, wait for status file to update with
-                    # new cargo count for next commodity
-                    if qty > 0:
-                        ap.status.wait_for_file_change(cargo_timestamp, 5)
-
-                    # Update counts if necessary
-                    if qty > 0 and self.waypoints['GlobalShoppingList']['UpdateCommodityCount']:
-                        global_buy_commodities[key] = qty_to_buy - qty
-
-                # Save changes
-                self.write_waypoints(data=None, filename='./waypoints/' + Path(self.filename).name)
-
-            sleep(1.5)  # give time to popdown
-        # Go back to cockpit view
-        ap.ship_control.goto_cockpit_view()
-
-    def execute_mission_scan(self, ap, dest_key):
-        # Check if we should scan for missions at this waypoint
-        if not self.waypoints[dest_key].get('ScanMissions', False):
-            return
-
-        # Go to mission board and scan
-        if ap.stn_svcs_in_ship.goto_mission_board():
-            ap.stn_svcs_in_ship.scan_missions(ap.keys)
-
-
-    def sell_to_colonisation_ship(self, ap):
-        """ Sell all cargo to a colonisation/construction ship.
-        """
-        ap.keys.send('UI_Left', repeat=3)  # Go to table
-        ap.keys.send('UI_Down', hold=2)  # Go to bottom
-        ap.keys.send('UI_Up')  # Select RESET/CONFIRM TRANSFER/TRANSFER ALL
-        ap.keys.send('UI_Left', repeat=2)  # Go to RESET
-        ap.keys.send('UI_Right', repeat=2)  # Go to TRANSFER ALL
-        ap.keys.send('UI_Select')  # Select TRANSFER ALL
-        sleep(0.5)
-
-        ap.keys.send('UI_Left')  # Go to CONFIRM TRANSFER
-        ap.keys.send('UI_Select')  # Select CONFIRM TRANSFER
-        sleep(2)
-
-        ap.keys.send('UI_Down')  # Go to EXIT
-        ap.keys.send('UI_Select')  # Select EXIT
-
-        sleep(2)  # give time to popdown menu
-
-    def waypoint_assist(self, keys, scr_reg):
-        """ Processes the waypoints, performing jumps and sc assist if going to a station
-        also can then perform trades if specific in the waypoints file.
-        """
-        if len(self.waypoints) == 0:
-            self.ap.ap_ckb('log+vce', "No Waypoint file loaded. Exiting Waypoint Assist.")
-            return
-
-        self.step = 0  # start at first waypoint
-        self.ap.ap_ckb('log', "Waypoint file: " + str(Path(self.filename).name))
-        self.reset_stats()
-
-        # Loop until complete, or error
-        _abort = False
-        while not _abort:
-            # Current location
-            cur_star_system = self.ap.jn.ship_state()['cur_star_system'].upper()
-            cur_station = self.ap.jn.ship_state()['cur_station'].upper()
-            cur_station_type = self.ap.jn.ship_state()['cur_station_type'].upper()
-
-            # Current in game destination
-            status = self.ap.status.get_cleaned_data()
-            destination_system = status['Destination_System']  # The system ID
-            destination_body = status['Destination_Body']  # The body number (0 for prim star)
-            destination_name = status['Destination_Name']  # The system/body/station/settlement name
-
-            # ====================================
-            # Get next Waypoint
-            # ====================================
-
-            # Get the waypoint details
-            old_step = self.step
-            dest_key, next_waypoint = self.get_waypoint()
-            if dest_key is None:
-                self.ap.ap_ckb('log+vce', "Waypoint list has been completed.")
-                break
-
-            # Is this a new waypoint?
-            if self.step != old_step:
-                new_waypoint = True
-            else:
-                new_waypoint = False
-
-            # Flag if we are using bookmarks
-            gal_bookmark = next_waypoint.get('GalaxyBookmarkNumber', -1) > 0
-            sys_bookmark = next_waypoint.get('SystemBookmarkNumber', -1) > 0
-            gal_bookmark_type = next_waypoint.get('GalaxyBookmarkType', '')
-            gal_bookmark_num = next_waypoint.get('GalaxyBookmarkNumber', 0)
-            sys_bookmark_type = next_waypoint.get('SystemBookmarkType', '')
-            sys_bookmark_num = next_waypoint.get('SystemBookmarkNumber', 0)
-
-            next_wp_system = next_waypoint.get('SystemName', '').upper()
-            next_wp_station = next_waypoint.get('StationName', '').upper()
-
-            if new_waypoint:
-                self.ap.ap_ckb('log+vce', f"Next Waypoint: {next_wp_station} in {next_wp_system}")
-
-            # ====================================
-            # Target and travel to a System
-            # ====================================
-
-            # Check current system and go to next system if different and not blank
-            if next_wp_system == "" or (cur_star_system == next_wp_system):
-                if new_waypoint:
-                    self.ap.ap_ckb('log+vce', f"Already in target System.")
-            else:
-                # Check if the current nav route is to the target system
-                last_nav_route_sys = self.ap.nav_route.get_last_system().upper()
-                # Check we have a route and that we have a destination to a star (body 0).
-                # We can have one without the other.
-                if ((last_nav_route_sys == next_wp_system) and
-                        (destination_body == 0 and destination_name != "")):
-                    # No need to target system
-                    self.ap.ap_ckb('log+vce', f"System already targeted.")
-                else:
-                    self.ap.ap_ckb('log+vce', f"Targeting system {next_wp_system}.")
-                    # Select destination in galaxy map based on name
-                    res = self.ap.galaxy_map.set_gal_map_destination_text(self.ap, next_wp_system,
-                                                                          self.ap.jn.ship_state)
-                    if res:
-                        self.ap.ap_ckb('log', f"System has been targeted.")
-                    else:
-                        self.ap.ap_ckb('log+vce', f"Unable to target {next_wp_system} in Galaxy Map.")
-                        _abort = True
-                        break
-
-                # Select next target system
-                # TODO should this be in before every jump?
-                keys.send('TargetNextRouteSystem')
-
-                # Jump to the destination system
-                self.ap.ap_ckb('log+vce', f"Jumping to {next_wp_system}.")
-                res = self.ap.jump_to_system(scr_reg)
-                if not res:
-                    self.ap.ap_ckb('log', f"Failed to jump to {next_wp_system}.")
-                    _abort = True
-                    break
-
+        for key, value in raw_waypoints.items():
+            if key == "GlobalShoppingList":
                 continue
-
-            # ====================================
-            # Target and travel to a local Station
-            # ====================================
-
-            # If we are in the right system, check if we are already docked.
-            docked_at_stn = False
-            is_docked = self.ap.status.get_flag(FlagsDocked)
-            if is_docked:
-                # Check if we are at the correct station. Note that for FCs, the station name
-                # reported by the Journal is only the ship identifier (ABC-123) and not the carrier name.
-                # So we need to check if the ID (ABC-123) is at the end of the target ('Fleety McFleet ABC-123').
-                if cur_station_type == 'FleetCarrier'.upper():
-                    docked_at_stn = next_wp_station.endswith(cur_station)
-                elif next_wp_station == 'System Colonisation Ship'.upper():
-                    if (cur_station_type == 'SurfaceStation'.upper() and
-                            'ColonisationShip'.upper() in cur_station.upper()):
-                        docked_at_stn = True
-                # elif next_wp_station.startswith('Orbital Construction Site'.upper()):
-                #     if (cur_station_type == 'SurfaceStation'.upper() and
-                #             'Orbital Construction Site'.upper() in cur_station.upper()):
-                #         docked_at_stn = True
-                elif cur_station == next_wp_station:
-                    docked_at_stn = True
-
-            # Check current station and go to it if different
-            if docked_at_stn:
-                if new_waypoint:
-                    self.ap.ap_ckb('log+vce', f"Already at target Station: {next_wp_station}")
             else:
-                # Check if we need to travel to a station, else we are done.
-                # This may be by 1) System bookmark, 2) Galaxy bookmark or 3) by Station Name text
-                if sys_bookmark or gal_bookmark or next_wp_station != "":
-                    # If waypoint file has a Station Name associated then attempt targeting it
-                    self.ap.ap_ckb('log+vce', f"Targeting Station: {next_wp_station}")
+                wp = InternalWaypoint(name=key)
+                wp.system_name.set(value.get('SystemName', ''))
+                wp.station_name.set(value.get('StationName', ''))
+                wp.galaxy_bookmark_type.set(value.get('GalaxyBookmarkType', ''))
+                wp.galaxy_bookmark_number.set(value.get('GalaxyBookmarkNumber', 0))
+                wp.system_bookmark_type.set(value.get('SystemBookmarkType', ''))
+                wp.system_bookmark_number.set(value.get('SystemBookmarkNumber', 0))
+                wp.update_commodity_count.set(value.get('UpdateCommodityCount', False))
+                wp.fleet_carrier_transfer.set(value.get('FleetCarrierTransfer', False))
+                wp.skip.set(value.get('Skip', False))
+                wp.completed.set(value.get('Completed', False))
+                wp.comment.set(value.get('Comment', ''))
+                wp.scan_missions.set(value.get('ScanMissions', False))
+                wp.buy_commodities = [ShoppingItem(k, v) for k, v in value.get('BuyCommodities', {}).items()]
+                wp.sell_commodities = [ShoppingItem(k, v) for k, v in value.get('SellCommodities', {}).items()]
+                self.waypoints.waypoints.append(wp)
 
-                    if gal_bookmark:
-                        # Set destination via gal bookmark, not system bookmark
-                        res = self.ap.galaxy_map.set_gal_map_dest_bookmark(self.ap, gal_bookmark_type, gal_bookmark_num)
-                        if not res:
-                            self.ap.ap_ckb('log+vce', f"Unable to set Galaxy Map bookmark.")
-                            _abort = True
-                            break
+    def convert_to_raw_waypoints(self):
+        raw_waypoints = {}
 
-                    elif sys_bookmark:
-                        # Set destination via system bookmark
-                        res = self.ap.system_map.set_sys_map_dest_bookmark(self.ap, sys_bookmark_type, sys_bookmark_num)
-                        if not res:
-                            self.ap.ap_ckb('log+vce', f"Unable to set System Map bookmark.")
-                            _abort = True
-                            break
+        # Waypoints
+        for i, wp in enumerate(self.waypoints.waypoints):
+            raw_wp = {
+                'SystemName': wp.system_name.get(),
+                'StationName': wp.station_name.get(),
+                'GalaxyBookmarkType': wp.galaxy_bookmark_type.get(),
+                'GalaxyBookmarkNumber': wp.galaxy_bookmark_number.get(),
+                'SystemBookmarkType': wp.system_bookmark_type.get(),
+                'SystemBookmarkNumber': wp.system_bookmark_number.get(),
+                'UpdateCommodityCount': wp.update_commodity_count.get(),
+                'FleetCarrierTransfer': wp.fleet_carrier_transfer.get(),
+                'Skip': wp.skip.get(),
+                'Completed': wp.completed.get(),
+                'ScanMissions': wp.scan_missions.get(),
+                'Comment': wp.comment.get(),
+                'BuyCommodities': {item.name.get(): item.quantity.get() for item in wp.buy_commodities},
+                'SellCommodities': {item.name.get(): item.quantity.get() for item in wp.sell_commodities}
+            }
+            raw_waypoints[wp.name.get() or str(i)] = raw_wp
 
-                    elif sys_bookmark_type == 'Nav-OCR':
-                        # Set destination via Nav-OCR
-                        station_to_find = next_wp_station
-                        if "EXT_PANEL_ColonisationShip;".upper() in station_to_find:
-                            parts = station_to_find.split(';')
-                            if len(parts) > 1:
-                                station_to_find = parts[1].strip()
+        return raw_waypoints
 
-                        res = self.nav_panel.select_station_by_ocr(station_to_find)
-                        if not res:
-                            self.ap.ap_ckb('log+vce', f"Unable to set station by Nav-OCR.")
-                            _abort = True
-                            break
-                    elif next_wp_station != "":
-                        # Need OCR added in for this (WIP)
-                        need_ocr = True
-                        self.ap.ap_ckb('log+vce', f"No bookmark defined. Target by Station text not supported.")
-                        # res = self.nav_panel.lock_destination(station_name)
-                        _abort = True
-                        break
+    def update_ui(self):
+        self.update_waypoints_list()
+        self.on_waypoint_select(None)
 
-                    # Jump to the station by name
-                    res = self.ap.supercruise_to_station(scr_reg, next_wp_station)
-                    sleep(1)  # Allow status log to update
-                    continue
-                else:
-                    self.ap.ap_ckb('log+vce', f"Arrived at target System: {next_wp_system}")
+    def update_waypoints_list(self):
+        # Clear existing items
+        for item in self.waypoints_tree.get_children():
+            self.waypoints_tree.delete(item)
 
-            # ====================================
-            # Dock and Trade at Station
-            # ====================================
+        # Add new items
+        for i, wp in enumerate(self.waypoints.waypoints):
+            self.waypoints_tree.insert('', 'end', values=(
+                wp.system_name.get(),
+                wp.station_name.get(),
+                "✓" if wp.skip.get() else "",
+                "✓" if wp.completed.get() else ""
+            ))
 
-            # Are we at the correct station to trade?
-            if docked_at_stn:  # and (next_wp_station != "" or sys_bookmark):
-                # Docked - let do trade
-                self.ap.ap_ckb('log+vce', f"Execute trade at Station: {next_wp_station}")
-                self.execute_trade(self.ap, dest_key)
-                self.execute_mission_scan(self.ap, dest_key)
+    def on_waypoint_select(self, event):
+        selected_item = self.waypoints_tree.selection()
+        if selected_item:
+            index = self.waypoints_tree.index(selected_item[0])
+            wp = self.waypoints.waypoints[index]
 
-            # Mark this waypoint as completed
-            self.mark_waypoint_complete(dest_key)
-            self.ap.ap_ckb('log+vce', f"Current Waypoint complete.")
+            # Bind widgets to the selected waypoint's variables
+            self.galaxy_bookmark_type_combo.config(textvariable=wp.galaxy_bookmark_type)
+            self.galaxy_bookmark_number_entry.config(textvariable=wp.galaxy_bookmark_number)
+            self.system_bookmark_type_combo.config(textvariable=wp.system_bookmark_type)
+            self.system_bookmark_number_entry.config(textvariable=wp.system_bookmark_number)
+            self.update_commodity_count_check.config(variable=wp.update_commodity_count)
+            self.fleet_carrier_transfer_check.config(variable=wp.fleet_carrier_transfer)
+            self.scan_missions_check.config(variable=wp.scan_missions)
 
-        # Done with waypoints
-        if not _abort:
-            self.ap.ap_ckb('log+vce',
-                           "Waypoint Route Complete, total distance jumped: " + str(self.ap.total_dist_jumped) + "LY")
-            self.ap.update_ap_status("Idle")
+            # Update commodity lists
+            self.update_commodity_list(wp.buy_commodities, self.buy_commodities_list)
+            self.update_commodity_list(wp.sell_commodities, self.sell_commodities_list)
         else:
-            self.ap.ap_ckb('log+vce', "Waypoint Route was aborted.")
-            self.ap.update_ap_status("Idle")
+            # Clear the bindings if no waypoint is selected
+            self.galaxy_bookmark_type_combo.config(textvariable=None)
+            self.galaxy_bookmark_number_entry.config(textvariable=None)
+            self.system_bookmark_type_combo.config(textvariable=None)
+            self.system_bookmark_number_entry.config(textvariable=None)
+            self.update_commodity_count_check.config(variable=None)
+            self.fleet_carrier_transfer_check.config(variable=None)
+            self.scan_missions_check.config(variable=None)
 
-    def reset_stats(self):
-        # Clear stats
-        self.stats_log['Colonisation'] = 0
-        self.stats_log['Construction'] = 0
-        self.stats_log['Fleet Carrier'] = 0
-        self.stats_log['Station'] = 0
+            self.update_commodity_list([], self.buy_commodities_list)
+            self.update_commodity_list([], self.sell_commodities_list)
 
+    def on_tree_click(self, event):
+        region = self.waypoints_tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
 
-def main():
-    from ED_AP import EDAutopilot
+        column = self.waypoints_tree.identify_column(event.x)
+        column_index = int(column.replace('#', '')) - 1
 
-    ed_ap = EDAutopilot(cb=None)
-    wp = EDWayPoint(ed_ap, True)  # False = Horizons
-    wp.step = 0  # start at first waypoint
-    keys = EDKeys(cb=None)
-    keys.activate_window = True
-    wp.ap.stn_svcs_in_ship.select_sell(keys)
-    wp.ap.stn_svcs_in_ship.sell_commodity(keys, "Aluminium", 1, wp.cargo_parser)
-    wp.ap.stn_svcs_in_ship.sell_commodity(keys, "Beryllium", 1, wp.cargo_parser)
-    wp.ap.stn_svcs_in_ship.sell_commodity(keys, "Cobalt", 1, wp.cargo_parser)
-    #wp.ap.stn_svcs_in_ship.buy_commodity(keys, "Titanium", 5, 200)
+        item_id = self.waypoints_tree.identify_row(event.y)
+        if not item_id:
+            return
 
-    # dest = 'Enayex'
-    #print(dest)
+        item_index = self.waypoints_tree.index(item_id)
+        wp = self.waypoints.waypoints[item_index]
 
-    #print("In waypoint_assist, at:"+str(dest))
+        if column_index == 2: # Skip column
+            wp.skip.set(not wp.skip.get())
+            self.update_waypoints_list()
+        elif column_index == 3: # Completed column
+            wp.completed.set(not wp.completed.get())
+            self.update_waypoints_list()
 
-    # already in doc config, test the trade
-    #wp.execute_trade(keys, dest)
+    def on_cell_double_click(self, event):
+        region = self.waypoints_tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
 
-    # Set the Route for the waypoint^#
-    #dest = wp.waypoint_next(ap=None)
+        column = self.waypoints_tree.identify_column(event.x)
+        column_index = int(column.replace('#', '')) - 1
 
-    #while dest != "":
+        # We only want to edit the first two columns
+        if column_index > 1:
+            return
 
-    #  print("Doing: "+str(dest))
-    #  print(wp.waypoints[dest])
+        item_id = self.waypoints_tree.identify_row(event.y)
+        item_index = self.waypoints_tree.index(item_id)
 
-    #wp.set_station_target(None, dest)
+        x, y, width, height = self.waypoints_tree.bbox(item_id, column)
 
-    # Mark this waypoint as complated
-    #wp.mark_waypoint_complete(dest)
+        entry_var = tk.StringVar()
+        entry = ttk.Entry(self.waypoints_tree, textvariable=entry_var, font=ttk.Style().lookup('TEntry', 'font'))
 
-    # set target to next waypoint and loop
-    #dest = wp.waypoint_next(ap=None)
+        # Ensure the entry is tall enough and centered
+        entry_req_height = entry.winfo_reqheight()
+        final_height = max(height, entry_req_height)
+        y_centered = y + (height - final_height) // 2
 
+        entry.place(x=x, y=y_centered, width=width, height=final_height, anchor='nw')
 
-if __name__ == "__main__":
-    main()
+        current_value = self.waypoints_tree.item(item_id, "values")[column_index]
+        entry_var.set(current_value)
+        entry.focus_set()
+        entry.select_range(0, 'end')
+        entry.icursor('end')
+
+        def save_edit(event):
+            new_value = entry_var.get()
+            wp = self.waypoints.waypoints[item_index]
+            if column_index == 0:
+                wp.system_name.set(new_value)
+            elif column_index == 1:
+                wp.station_name.set(new_value)
+
+            self.update_waypoints_list()
+            entry.destroy()
+
+        entry.bind("<Return>", save_edit)
+        entry.bind("<FocusOut>", save_edit)
+
+    def on_commodity_cell_double_click(self, event, list_type):
+        selected_waypoint = self.get_selected_waypoint()
+        if not selected_waypoint:
+            return
+
+        treeview = event.widget  # Capture the treeview widget
+        region = treeview.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+
+        column = treeview.identify_column(event.x)
+        column_index = int(column.replace('#', '')) - 1
+
+        item_id = treeview.identify_row(event.y)
+        if not item_id:
+            return
+
+        item_index = treeview.index(item_id)
+
+        if list_type == "buy":
+            commodity_list = self.get_selected_waypoint().buy_commodities
+        elif list_type == "sell":
+            commodity_list = self.get_selected_waypoint().sell_commodities
+        else:
+            return # Should not happen
+
+        x, y, width, height = treeview.bbox(item_id, column)
+
+        if column_index == 0: # Name column
+            def on_select_callback(selected_value):
+                commodity_list[item_index].name.set(selected_value)
+                self.update_commodity_list(commodity_list, treeview)
+                entry.destroy()
+
+            entry = SearchableCombobox(treeview, ALL_COMMODITIES, on_select_callback)
+            entry.entry.config(font=ttk.Style().lookup('TEntry', 'font'))
+
+            # Ensure the entry is tall enough and centered
+            entry_req_height = entry.entry.winfo_reqheight()
+            final_height = max(height, entry_req_height)
+            y_centered = y + (height - final_height) // 2
+
+            entry.place(x=x, y=y_centered, width=width, height=final_height, anchor='nw')
+            current_value = treeview.item(item_id, "values")[column_index]
+            entry.set(current_value)
+            entry.show_dropdown()
+            entry.entry.focus_set()
+            entry.entry.select_range(0, 'end')
+            entry.entry.icursor('end')
+
+            def _save_and_destroy_if_needed(widget_to_destroy):
+                # This check runs after a short delay.
+                # If the widget still exists, it means the user clicked away
+                # without making a selection. If they made a selection,
+                # the on_select_callback would have already destroyed it.
+                try:
+                    if widget_to_destroy.winfo_exists():
+                        new_value = widget_to_destroy.get()
+                        commodity_list[item_index].name.set(new_value)
+                        self.update_commodity_list(commodity_list, treeview)
+                        widget_to_destroy.destroy()
+                except tk.TclError:
+                    # Widget was already destroyed.
+                    pass
+
+            def save_edit(event):
+                # When focus is lost or Return is pressed, schedule a check.
+                # This delay handles the race condition between FocusOut and TreeviewSelect.
+                self.frame.after(50, lambda: _save_and_destroy_if_needed(entry))
+
+            def cancel_edit(cancel_event):
+                entry.hide_dropdown()
+                entry.destroy()
+
+            entry.entry.bind("<Return>", save_edit)
+            entry.entry.bind("<FocusOut>", save_edit)
+            entry.entry.bind("<Escape>", cancel_edit)
+
+        elif column_index == 1: # Quantity column
+            entry_var = tk.StringVar()
+            entry = ttk.Entry(treeview, textvariable=entry_var, font=ttk.Style().lookup('TEntry', 'font'))
+
+            # Ensure the entry is tall enough and centered
+            entry_req_height = entry.winfo_reqheight()
+            final_height = max(height, entry_req_height)
+            y_centered = y + (height - final_height) // 2
+
+            entry.place(x=x, y=y_centered, width=width, height=final_height, anchor='nw')
+            entry_var.set(treeview.item(item_id, "values")[column_index])
+            entry.focus_set()
+            entry.select_range(0, 'end')
+            entry.icursor('end')
+
+            def save_edit(save_event):
+                try:
+                    new_value = entry_var.get()
+                    commodity_list[item_index].quantity.set(int(new_value))
+                except ValueError:
+                    pass # Ignore invalid input
+                finally:
+                    self.update_commodity_list(commodity_list, treeview)
+                    entry.destroy()
+
+            def cancel_edit(cancel_event):
+                entry.destroy()
+
+            entry.bind("<Return>", save_edit)
+            entry.bind("<FocusOut>", save_edit)
+            entry.bind("<Escape>", cancel_edit)
+
+    def update_commodity_list(self, commodity_list, treeview):
+        for item in treeview.get_children():
+            treeview.delete(item)
+
+        for i, item in enumerate(commodity_list):
+            treeview.insert('', 'end', values=(item.name.get(), item.quantity.get()))
+
+    def add_waypoint(self):
+        new_waypoint = InternalWaypoint(system_name="New System")
+        self.waypoints.waypoints.append(new_waypoint)
+        self.update_waypoints_list()
+
+    def delete_waypoint(self):
+        selected_item = self.waypoints_tree.selection()
+        if selected_item:
+            for item in selected_item:
+                index = self.waypoints_tree.index(item)
+                del self.waypoints.waypoints[index]
+            self.update_waypoints_list()
+
+    def move_waypoint_up(self):
+        selected_item = self.waypoints_tree.selection()
+        if selected_item:
+            for item in selected_item:
+                index = self.waypoints_tree.index(item)
+                if index > 0:
+                    self.waypoints.waypoints.insert(index - 1, self.waypoints.waypoints.pop(index))
+            self.update_waypoints_list()
+
+    def move_waypoint_down(self):
+        selected_item = self.waypoints_tree.selection()
+        if selected_item:
+            for item in reversed(selected_item):
+                index = self.waypoints_tree.index(item)
+                if index < len(self.waypoints.waypoints) - 1:
+                    self.waypoints.waypoints.insert(index + 1, self.waypoints.waypoints.pop(index))
+            self.update_waypoints_list()
+
+    def get_selected_waypoint(self):
+        selected_item = self.waypoints_tree.selection()
+        if selected_item:
+            index = self.waypoints_tree.index(selected_item[0])
+            return self.waypoints.waypoints[index]
+        return None
+
+    def add_buy_commodity(self):
+        wp = self.get_selected_waypoint()
+        if wp:
+            wp.buy_commodities.append(ShoppingItem("New Commodity", 1))
+            self.update_commodity_list(wp.buy_commodities, self.buy_commodities_list)
+
+    def delete_buy_commodity(self):
+        wp = self.get_selected_waypoint()
+        if wp:
+            selected_item = self.buy_commodities_list.selection()
+            if selected_item:
+                for item in selected_item:
+                    index = self.buy_commodities_list.index(item)
+                    del wp.buy_commodities[index]
+                self.update_commodity_list(wp.buy_commodities, self.buy_commodities_list)
+
+    def move_buy_commodity_up(self):
+        wp = self.get_selected_waypoint()
+        if wp:
+            selected_item = self.buy_commodities_list.selection()
+            if selected_item:
+                for item in selected_item:
+                    index = self.buy_commodities_list.index(item)
+                    if index > 0:
+                        wp.buy_commodities.insert(index - 1, wp.buy_commodities.pop(index))
+                self.update_commodity_list(wp.buy_commodities, self.buy_commodities_list)
+
+    def move_buy_commodity_down(self):
+        wp = self.get_selected_waypoint()
+        if wp:
+            selected_item = self.buy_commodities_list.selection()
+            if selected_item:
+                for item in reversed(selected_item):
+                    index = self.buy_commodities_list.index(item)
+                    if index < len(wp.buy_commodities) - 1:
+                        wp.buy_commodities.insert(index + 1, wp.buy_commodities.pop(index))
+                self.update_commodity_list(wp.buy_commodities, self.buy_commodities_list)
+
+    def add_sell_commodity(self):
+        wp = self.get_selected_waypoint()
+        if wp:
+            wp.sell_commodities.append(ShoppingItem("New Commodity", 1))
+            self.update_commodity_list(wp.sell_commodities, self.sell_commodities_list)
+
+    def delete_sell_commodity(self):
+        wp = self.get_selected_waypoint()
+        if wp:
+            selected_item = self.sell_commodities_list.selection()
+            if selected_item:
+                for item in selected_item:
+                    index = self.sell_commodities_list.index(item)
+                    del wp.sell_commodities[index]
+                self.update_commodity_list(wp.sell_commodities, self.sell_commodities_list)
+
+    def move_sell_commodity_up(self):
+        wp = self.get_selected_waypoint()
+        if wp:
+            selected_item = self.sell_commodities_list.selection()
+            if selected_item:
+                for item in selected_item:
+                    index = self.sell_commodities_list.index(item)
+                    if index > 0:
+                        wp.sell_commodities.insert(index - 1, wp.sell_commodities.pop(index))
+                self.update_commodity_list(wp.sell_commodities, self.sell_commodities_list)
+
+    def move_sell_commodity_down(self):
+        wp = self.get_selected_waypoint()
+        if wp:
+            selected_item = self.sell_commodities_list.selection()
+            if selected_item:
+                for item in reversed(selected_item):
+                    index = self.sell_commodities_list.index(item)
+                    if index < len(wp.sell_commodities) - 1:
+                        wp.sell_commodities.insert(index + 1, wp.sell_commodities.pop(index))
+                self.update_commodity_list(wp.sell_commodities, self.sell_commodities_list)
+
+    def add_inara_route(self, text):
+        lines = text.splitlines()
+
+        from_waypoint = InternalWaypoint()
+        to_waypoint = InternalWaypoint()
+
+        from_buy = True
+        from_sell = True
+
+        for line in lines:
+            if line.startswith("From"):
+                parts = line.replace("From", "").split('|')
+                if len(parts) >= 2:
+                    from_waypoint.station_name.set(parts[0].strip())
+                    from_waypoint.system_name.set(parts[1].strip())
+            elif line.startswith("To"):
+                parts = line.replace("To", "").split('|')
+                if len(parts) >= 2:
+                    to_waypoint.station_name.set(parts[0].strip())
+                    to_waypoint.system_name.set(parts[1].strip())
+            elif line.startswith("Buy") and not line.startswith("Buy price"):
+                commodity = line.replace("Buy", "").strip()
+                if from_buy:
+                    from_waypoint.buy_commodities.append(ShoppingItem(commodity, 9999))
+                else:
+                    to_waypoint.buy_commodities.append(ShoppingItem(commodity, 9999))
+                from_buy = False
+            elif line.startswith("Sell") and not line.startswith("Sell price"):
+                commodity = line.replace("Sell", "").strip()
+                if from_sell:
+                    from_waypoint.sell_commodities.append(ShoppingItem(commodity, 9999))
+                else:
+                    to_waypoint.sell_commodities.append(ShoppingItem(commodity, 9999))
+                from_sell = False
+
+        self.waypoints.waypoints.append(from_waypoint)
+        self.waypoints.waypoints.append(to_waypoint)
+        self.update_waypoints_list()
+        messagebox.showinfo("Inara Route Added", "The trade route has been added to your waypoints.")
