@@ -574,7 +574,7 @@ class EDStationServicesInShip:
 
         # Navigate to the mission board in the station services menu
         # This is a bit of a guess, might need calibration
-        self.keys.send('UI_Down', repeat=5)
+        self.keys.send('UI_Select')
         sleep(0.2)
         self.keys.send('UI_Select')
         sleep(2) # Wait for screen to load
@@ -596,7 +596,7 @@ class EDStationServicesInShip:
         self.keys.send('UI_Right')
         sleep(0.2)
         self.keys.send('UI_Select')
-        sleep(2) # Reduced from 10
+        sleep(10) # Reduced from 10
         return True
 
 
