@@ -452,6 +452,26 @@ class EDAutopilot:
         self.update_overlay()
         self.ap_ckb('statusline', txt)
 
+    def get_cargo_info(self):
+        ship_state = self.jn.ship_state()
+        status_data = self.status.get_cleaned_data()
+        
+        capacity = ship_state.get('cargo_capacity')
+        current = status_data.get('Cargo')
+
+        if capacity is None:
+            logger.warning("Cargo capacity not available from journal.")
+            # Fallback or default value if necessary
+            capacity = 0 
+
+        if current is None:
+            logger.warning("Current cargo not available from status.")
+            # Fallback or default value if necessary
+            current = 0
+
+        free = capacity - current
+        return {'total': capacity, 'current': current, 'free': free}
+
 
     # draws the matching rectangle within the image
     #

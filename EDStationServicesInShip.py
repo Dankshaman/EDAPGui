@@ -68,12 +68,7 @@ class EDStationServicesInShip:
 
     def goto_station_services(self) -> bool:
         """ Goto Station Services. """
-
-        # First, check if we are already on the station services screen
         scl_reg = reg_scale_for_station(self.reg['connected_to'], self.screen.screen_width, self.screen.screen_height)
-        if self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_CONNECTED_TO"]], scl_reg, timeout=2):
-            logger.info("Already on station services screen.")
-            return True
 
         # If not, go to cockpit view and navigate
         self.ap.ship_control.goto_cockpit_view()
@@ -500,16 +495,16 @@ class EDStationServicesInShip:
         """Buys a commodity required for a given mission."""
         commodity_name = mission['commodity']
         tonnage = mission['tonnage']
-        free_cargo = self.ap.internal_panel.get_cargo_info()['free']
+        free_cargo = self.ap.get_cargo_info()['free']
 
         self.ap_ckb('log+vce', f"Buying {tonnage} of {commodity_name} for mission.")
         logger.info(f"Buying {tonnage} of {commodity_name} for mission.")
 
         # Assumes we are on the commodity market screen.
         self.goto_station_services()
-        self.keys.send("UI_Down", repeat=2)
+        self.keys.send("UI_Right", repeat=2)
         self.keys.send("UI_Select")
-        sleep(2) # Wait for screen to load
+        sleep(5) # Wait for screen to load
 
         if not self.select_buy(self.keys):
             self.ap_ckb('log+vce', "Failed to select buy tab in commodities market.")
@@ -590,13 +585,6 @@ class EDStationServicesInShip:
 
         self.ap_ckb('log+vce', "Successfully entered Mission Board.")
         logger.debug("goto_mission_board: success")
-        sleep(0.2)
-        self.keys.send('UI_Right')
-        sleep(0.2)
-        self.keys.send('UI_Right')
-        sleep(0.2)
-        self.keys.send('UI_Select')
-        sleep(10) # Reduced from 10
         return True
 
 
@@ -604,6 +592,13 @@ class EDStationServicesInShip:
         """
         Scans the mission board for specific mining missions and accepts them if they meet the criteria.
         """
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Select')
+        sleep(5) # Reduced from 10
         self.ap_ckb('log+vce', "Scanning mission board.")
         logger.debug("scan_missions: entered")
 
@@ -708,6 +703,13 @@ class EDStationServicesInShip:
         """
         Scans the mission board for specific mining missions and accepts them if they meet the criteria.
         """
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Select')
+        sleep(5) # Reduced from 10
         self.ap_ckb('log+vce', "Scanning mission board.")
         logger.debug("scan_missions: entered")
 

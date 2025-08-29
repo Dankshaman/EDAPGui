@@ -3,6 +3,7 @@ import time
 import traceback
 from EDlogger import logger
 import difflib
+import StateManager as sm
 
 # States for the Wing Mining state machine
 STATE_IDLE = "IDLE"
@@ -26,6 +27,26 @@ class WingMining:
         self.current_mission = None
         self.current_station_idx = 0  # 0 for A, 1 for B
         self.mission_turned_in = False
+        self._load_state()
+
+    def _get_state(self):
+        return {
+            "state": self.state,
+            "mission_queue": self.mission_queue,
+            "current_mission": self.current_mission,
+            "current_station_idx": self.current_station_idx,
+            "mission_turned_in": self.mission_turned_in,
+        }
+
+    def _load_state(self):
+        state = sm.load_state()
+        if state:
+            self.state = state.get("state", STATE_IDLE)
+            self.mission_queue = state.get("mission_queue", [])
+            self.current_mission = state.get("current_mission", None)
+            self.current_station_idx = state.get("current_station_idx", 0)
+            self.mission_turned_in = state.get("mission_turned_in", False)
+            logger.info("Wing Mining state restored.")
 
     def start(self):
         logger.info("Starting Wing Mining sequence.")
@@ -49,6 +70,7 @@ class WingMining:
     def stop(self):
         logger.info("Stopping Wing Mining sequence.")
         self.set_state(STATE_IDLE)
+        sm.clear_state()
 
     def reset_mission_counter(self):
         logger.info("Resetting Wing Mining mission counter.")
@@ -57,11 +79,13 @@ class WingMining:
         self.ap.update_config()
         self.ap.ap_ckb('update_wing_mining_mission_count', 0)
         self.stop() # Stop the sequence if it's running
+        sm.clear_state()
 
     def run(self):
         if self.state == STATE_IDLE or self.state == STATE_DONE:
             return
 
+        sm.save_state(self._get_state())
         self._update_config_values()
         if self.completed_missions >= 20:
             self.set_state(STATE_DONE)
@@ -249,12 +273,6 @@ class WingMining:
     def turn_in_mission(self, mission):
         self.ap.stn_svcs_in_ship.goto_mission_board()
 
-        scl_mission_board = self.ap.stn_svcs_in_ship.reg['mission_board_header']
-        if not self.ap.ocr.wait_for_text(self.ap, [self.ap.locale["STN_SVCS_MISSION_BOARD_HEADER"]], scl_mission_board):
-            logger.error("Could not verify that we are on the mission board.")
-            self.ap.keys.send("UI_Back", repeat=4)
-            return False
-
         self.ap.keys.send("UI_Right", repeat=3)
         sleep(1)
         self.ap.keys.send("UI_Down")
@@ -262,18 +280,13 @@ class WingMining:
         self.ap.keys.send("UI_Select")
         sleep(10)
 
-        # scl_mission_depot_tab = self.ap.stn_svcs_in_ship.reg['mission_depot_tab']
-        # if not self.ap.ocr.wait_for_text(self.ap, [self.ap.locale["STN_SVCS_MISSION_DEPOT_TAB"]], scl_mission_depot_tab):
-            # logger.error("Could not verify that we are on the Mission Depot tab.")
-            # self.ap.keys.send("UI_Back", repeat=4)
-            # return False
 
         if self._find_mission_in_list(mission):
             self.ap.keys.send("UI_Select")
             sleep(1)
             self.ap.keys.send("UI_Select")
             sleep(1)
-            self.ap.keys.send("UI_Right", hold=30)
+            self.ap.keys.send("UI_Right", hold=10)
             sleep(1)
             self.ap.keys.send("UI_Select")
             sleep(5)
