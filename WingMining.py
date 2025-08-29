@@ -45,8 +45,6 @@ class WingMining:
     def stop(self):
         logger.info("Stopping Wing Mining sequence.")
         self.set_state(STATE_IDLE)
-        if self.ap.single_waypoint_enabled:
-            self.ap.set_single_waypoint_assist(None, None, False)
 
     def reset_mission_counter(self):
         logger.info("Resetting Wing Mining mission counter.")

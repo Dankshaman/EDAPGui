@@ -32,6 +32,7 @@ from Overlay import *
 from StatusParser import StatusParser
 from Voice import *
 from Robigo import *
+from WingMining import WingMining
 from TCE_Integration import TceIntegration
 from EDFleetCarrierAP import FleetCarrierAutopilot
 
@@ -203,6 +204,7 @@ class EDAutopilot:
         self.dss_assist_enabled = False
         self.single_waypoint_enabled = False
         self.fc_assist_enabled = False
+        self.wing_mining_assist_enabled = False
 
         # Create instance of each of the needed Classes
         self.gfx_settings = EDGraphicsSettings()
@@ -221,6 +223,7 @@ class EDAutopilot:
         self.ap_ckb = cb
         self.waypoint = EDWayPoint(self, self.jn.ship_state()['odyssey'])
         self.robigo = Robigo(self)
+        self.wing_mining = WingMining(self)
         self.status = StatusParser()
         self.nav_route = NavRouteParser()
         self.ship_control = EDShipControl(self, self.scr, self.keys, cb)
@@ -2218,6 +2221,9 @@ class EDAutopilot:
     def robigo_assist(self):
         self.robigo.loop(self)
 
+    def wing_mining_assist(self):
+        self.wing_mining.run()
+
     # Simply monitor for Shields down so we can boost away or our fighter got destroyed
     # and thus redeploy another one
     def afk_combat_loop(self):
@@ -2356,6 +2362,15 @@ class EDAutopilot:
         if enable == False and self.fc_assist_enabled == True:
             self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
         self.fc_assist_enabled = enable
+
+    def set_wing_mining_assist(self, enable=True):
+        if enable:
+            self.wing_mining.start()
+        else:
+            if self.wing_mining_assist_enabled:
+                self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
+            self.wing_mining.stop()
+        self.wing_mining_assist_enabled = enable
 
     def set_cv_view(self, enable=True, x=0, y=0):
         self.cv_view = enable
@@ -2565,6 +2580,22 @@ class EDAutopilot:
 
                 self.fc_assist_enabled = False
                 self.ap_ckb('fc_stop') # This will need to be added to the GUI
+                self.update_overlay()
+
+            elif self.wing_mining_assist_enabled:
+                logger.debug("Running wing_mining_assist")
+                set_focus_elite_window()
+                self.update_overlay()
+                try:
+                    self.wing_mining_assist()
+                except EDAP_Interrupt:
+                    logger.debug("Caught stop exception")
+                except Exception as e:
+                    print("Trapped generic:"+str(e))
+                    traceback.print_exc()
+
+                self.wing_mining_assist_enabled = False
+                self.ap_ckb('wing_mining_stop')
                 self.update_overlay()
 
             # Check once EDAPGUI loaded to prevent errors logging to the listbox before loaded
