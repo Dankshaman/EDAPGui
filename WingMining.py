@@ -304,13 +304,27 @@ class WingMining:
 
     def _handle_buy_commodity(self):
         try:
-            self.ap.update_ap_status(f"Buying {self.current_mission['tonnage']} tons of {self.current_mission['commodity']}")
-            if self.ap.stn_svcs_in_ship.buy_commodity_for_mission(self.current_mission):
-                self.set_state(STATE_TRAVEL_TO_TURN_IN)
+            required_tonnage = self.current_mission['tonnage']
+            commodity = self.current_mission['commodity']
+            self.ap.update_ap_status(f"Buying {required_tonnage} tons of {commodity} from {self.current_carrier_name}")
+
+            success, purchased_qty = self.ap.stn_svcs_in_ship.buy_commodity_for_mission(self.current_mission)
+
+            if success:
+                if purchased_qty < required_tonnage:
+                    logger.info(f"Partial buy: Got {purchased_qty}/{required_tonnage} of {commodity}. Finding another carrier.")
+                    self.ap.update_ap_status(f"Bought {purchased_qty}/{required_tonnage}. Need more.")
+                    self.current_mission['tonnage'] = required_tonnage - purchased_qty
+                    self.failed_carriers.append(self.current_carrier_name)
+                    self.set_state(STATE_TRAVEL_TO_FC)
+                else:
+                    logger.info(f"Successfully purchased all required {commodity}.")
+                    self.set_state(STATE_TRAVEL_TO_TURN_IN)
             else:
                 logger.warning(f"Failed to buy commodity from {self.current_carrier_name}. Blacklisting and retrying.")
                 self.failed_carriers.append(self.current_carrier_name)
                 self.set_state(STATE_TRAVEL_TO_FC)
+
         except Exception as e:
             logger.error(f"Exception caught in _handle_buy_commodity: {e}")
             logger.error(traceback.format_exc())

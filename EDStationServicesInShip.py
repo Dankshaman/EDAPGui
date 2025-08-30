@@ -496,32 +496,68 @@ class EDStationServicesInShip:
 
             return True, act_qty
 
-    def buy_commodity_for_mission(self, mission):
-        """Buys a commodity required for a given mission."""
+    def buy_commodity_for_mission(self, mission) -> tuple[bool, int]:
+        """
+        Buys a commodity required for a given mission.
+        Returns a tuple of (success, quantity_purchased).
+        """
         commodity_name = mission['commodity']
         tonnage = mission['tonnage']
         free_cargo = self.ap.get_cargo_info()['free']
 
-        self.ap_ckb('log+vce', f"Buying {tonnage} of {commodity_name} for mission.")
-        logger.info(f"Buying {tonnage} of {commodity_name} for mission.")
+        self.ap_ckb('log+vce', f"Attempting to buy {tonnage} of {commodity_name} for mission.")
+        logger.info(f"Attempting to buy {tonnage} of {commodity_name} for mission.")
 
-        # Assumes we are on the commodity market screen.
-        self.goto_station_services()
+        # Determine actual quantity we can buy from market data
+        self.market_parser.get_market_data()
+        if not self.market_parser.can_buy_item(commodity_name):
+            self.ap_ckb('log+vce', f"'{commodity_name}' is not sold or has no stock at this market.")
+            logger.warning(f"'{commodity_name}' is not sold or has no stock at this market.")
+            return False, 0
+
+        stock = 0
+        buyable_items = self.market_parser.get_buyable_items()
+        if buyable_items:
+            for item in buyable_items:
+                if item['Name_Localised'].upper() == commodity_name.upper():
+                    stock = item['Stock']
+                    break
+        
+        if stock == 0:
+            self.ap_ckb('log+vce', f"Market has zero stock of {commodity_name}.")
+            logger.warning(f"Market has zero stock of {commodity_name}.")
+            return False, 0
+
+        qty_to_buy = min(tonnage, stock, free_cargo)
+        if qty_to_buy <= 0:
+            self.ap_ckb('log+vce', f"Cannot buy {commodity_name}, need {tonnage}, have {free_cargo} free space, stock is {stock}.")
+            logger.warning(f"Cannot buy {commodity_name}, need {tonnage}, have {free_cargo} free space, stock is {stock}.")
+            return False, 0
+
+        logger.info(f"Calculated quantity to buy: {qty_to_buy} of {commodity_name}.")
+
+        # Navigate to commodity market
+        if not self.goto_station_services():
+            return False, 0
+            
         self.keys.send("UI_Right", repeat=2)
         self.keys.send("UI_Select")
         sleep(5) # Wait for screen to load
 
         if not self.select_buy(self.keys):
             self.ap_ckb('log+vce', "Failed to select buy tab in commodities market.")
-            return False
+            # Back out to main menu
+            self.keys.send("UI_Back", repeat=4)
+            sleep(1)
+            return False, 0
 
-        success, _ = self.buy_commodity(self.keys, commodity_name, tonnage, free_cargo)
+        success, purchased_qty = self.buy_commodity(self.keys, commodity_name, qty_to_buy, free_cargo)
 
         # Back to the main station services menu
         self.keys.send("UI_Back", repeat=4)
         sleep(1)
 
-        return success
+        return success, purchased_qty
 
     def goto_fleet_carrier_management(self):
         """ Navigates to the Fleet Carrier Management screen from station services. """
