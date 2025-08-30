@@ -884,7 +884,7 @@ class EDStationServicesInShip:
         self.keys.send('UI_Down')
         sleep(0.5)
 
-        in_list = False
+        in_list = True
         for _ in range(100): # Max 100 scrolls
             image = self.ocr.capture_region_pct(scl_reg_list)
             img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)

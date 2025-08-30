@@ -282,6 +282,7 @@ class APGui():
         self.entries['wing_mining_fc_b_gold'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Gold', ''))
         self.entries['wing_mining_fc_b_indite'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Indite', ''))
         self.entries['wing_mining_fc_b_silver'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Silver', ''))
+        self.checkboxvar['WingMining_SkipDepotCheck'].set(self.ed_ap.config.get('WingMining_SkipDepotCheck', False))
 
         completed_missions = self.ed_ap.config.get('WingMining_CompletedMissions', 0)
         self.completed_missions_var.set(str(completed_missions))
@@ -711,6 +712,7 @@ class APGui():
             self.ed_ap.config['WingMining_FC_B_Indite'] = self.entries['wing_mining_fc_b_indite'].get()
             self.ed_ap.config['WingMining_FC_B_Silver'] = self.entries['wing_mining_fc_b_silver'].get()
             self.ed_ap.config['WingMining_CompletedMissions'] = int(self.entries['wing_mining_mission_count'].get())
+            self.ed_ap.config['WingMining_SkipDepotCheck'] = self.checkboxvar['WingMining_SkipDepotCheck'].get()
 
         except:
             messagebox.showinfo("Exception", "Invalid float entered")
@@ -1358,6 +1360,14 @@ class APGui():
         ttk.Label(blk_wing_mining, text="Silver FC:").grid(row=9, column=0, padx=5, pady=5, sticky=tk.W)
         self.entries['wing_mining_fc_b_silver'] = ttk.Entry(blk_wing_mining, width=30)
         self.entries['wing_mining_fc_b_silver'].grid(row=9, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        # Separator
+        ttk.Separator(blk_wing_mining, orient='horizontal').grid(row=10, column=0, columnspan=2, sticky='ew', pady=10)
+
+        # Skip Depot Checkbox
+        self.checkboxvar['WingMining_SkipDepotCheck'] = tk.BooleanVar()
+        cb_skip_depot = ttk.Checkbutton(blk_wing_mining, text='Skip Mission Depot Check', variable=self.checkboxvar['WingMining_SkipDepotCheck'])
+        cb_skip_depot.grid(row=11, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
 
         # Mission Counter
         blk_mission_counter = ttk.LabelFrame(tab, text="Mission Counter", padding=(10, 5))

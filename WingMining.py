@@ -7,6 +7,7 @@ import os
 from EDlogger import logger
 import difflib
 import StateManager as sm
+import json
 
 # States for the Wing Mining state machine
 STATE_IDLE = "IDLE"
@@ -19,6 +20,7 @@ STATE_TRAVEL_TO_FC = "TRAVEL_TO_FC"
 STATE_BUY_COMMODITY = "BUY_COMMODITY"
 STATE_TRAVEL_TO_TURN_IN = "TRAVEL_TO_TURN_IN"
 STATE_TURN_IN_MISSION = "TURN_IN_MISSION"
+STATE_WAIT_AND_RECHECK = "WAIT_AND_RECHECK"
 STATE_DONE = "DONE"
 
 
@@ -30,8 +32,8 @@ class WingMining:
         self.current_mission = None
         self.current_station_idx = 0  # 0 for A, 1 for B
         self.mission_turned_in = False
-        self.fc_attempt = 1
-        self.fc_config_2 = {}
+        self.failed_carriers = []
+        self.current_carrier_name = None
         self._load_state()
 
     def _get_state(self):
@@ -58,7 +60,6 @@ class WingMining:
         self.mission_queue = []
         self.current_mission = None
         self.current_station_idx = 0
-        self.fc_attempt = 1
         self._update_config_values()
         self.mission_turned_in = False
 
@@ -71,6 +72,25 @@ class WingMining:
             self.set_state(STATE_IDLE)
             return
 
+        # Smarter start logic
+        ship_state = self.ap.jn.ship_state()
+        if ship_state['status'] == 'in_station':
+            current_station = ship_state['cur_station']
+            _, station_a_name = self.station_a.split('/')
+            _, station_b_name = self.station_b.split('/')
+            
+            if current_station.upper() == station_a_name.upper():
+                logger.info(f"Starting at Station A: {self.station_a}")
+                self.current_station_idx = 0
+                self.set_state(STATE_SCAN_FOR_MISSIONS)
+                return
+            elif current_station.upper() == station_b_name.upper():
+                logger.info(f"Starting at Station B: {self.station_b}")
+                self.current_station_idx = 1
+                self.set_state(STATE_SCAN_FOR_MISSIONS)
+                return
+
+        logger.info("Not starting at a configured wing mining station. Traveling to Station A.")
         self.set_state(STATE_TRAVEL_TO_STATION)
 
     def stop(self):
@@ -118,6 +138,8 @@ class WingMining:
             self._handle_travel_to_turn_in()
         elif self.state == STATE_TURN_IN_MISSION:
             self._handle_turn_in_mission()
+        elif self.state == STATE_WAIT_AND_RECHECK:
+            self._handle_wait_and_recheck()
 
     def set_state(self, new_state):
         if self.state != new_state:
@@ -129,34 +151,7 @@ class WingMining:
         self.completed_missions = self.ap.config.get('WingMining_CompletedMissions', 0)
         self.station_a = self.ap.config.get('WingMining_StationA', '')
         self.station_b = self.ap.config.get('WingMining_StationB', '')
-        self.fc_config = {
-            0: { # Station A
-                "bertrandite": self.ap.config.get('WingMining_FC_A_Bertrandite', ''),
-                "gold": self.ap.config.get('WingMining_FC_A_Gold', ''),
-                "indite": self.ap.config.get('WingMining_FC_A_Indite', ''),
-                "silver": self.ap.config.get('WingMining_FC_A_Silver', '')
-            },
-            1: { # Station B
-                "bertrandite": self.ap.config.get('WingMining_FC_B_Bertrandite', ''),
-                "gold": self.ap.config.get('WingMining_FC_B_Gold', ''),
-                "indite": self.ap.config.get('WingMining_FC_B_Indite', ''),
-                "silver": self.ap.config.get('WingMining_FC_B_Silver', '')
-            }
-        }
-        self.fc_config_2 = {
-            0: { # Station A
-                "bertrandite": self.ap.config.get('WingMining_FC_A_Bertrandite_2', ''),
-                "gold": self.ap.config.get('WingMining_FC_A_Gold_2', ''),
-                "indite": self.ap.config.get('WingMining_FC_A_Indite_2', ''),
-                "silver": self.ap.config.get('WingMining_FC_A_Silver_2', '')
-            },
-            1: { # Station B
-                "bertrandite": self.ap.config.get('WingMining_FC_B_Bertrandite_2', ''),
-                "gold": self.ap.config.get('WingMining_FC_B_Gold_2', ''),
-                "indite": self.ap.config.get('WingMining_FC_B_Indite_2', ''),
-                "silver": self.ap.config.get('WingMining_FC_B_Silver_2', '')
-            }
-        }
+        self.skip_depot_check = self.ap.config.get('WingMining_SkipDepotCheck', False)
 
     def _get_current_station_name(self):
         return self.station_a if self.current_station_idx == 0 else self.station_b
@@ -192,7 +187,7 @@ class WingMining:
             logger.info(f"Found {len(new_missions)} new missions.")
         else:
             logger.info(f"No new missions found at {station_name}.")
-            if not self.current_mission:
+            if not self.current_mission and not self.skip_depot_check:
                 logger.info("No current mission, checking depot for pending missions.")
                 self.ap.keys.send("UI_Back", repeat=10)
                 sleep(1)
@@ -202,6 +197,8 @@ class WingMining:
                 if pending_missions:
                     self.mission_queue.extend(pending_missions)
                     logger.info(f"Found {len(pending_missions)} pending missions in depot.")
+            elif self.skip_depot_check:
+                logger.info("Skipping mission depot check as per configuration.")
 
         self.ap.keys.send("UI_Back", repeat=4)
         sleep(1)
@@ -210,7 +207,7 @@ class WingMining:
     def _handle_process_queue(self):
         if self.mission_queue:
             self.current_mission = self.mission_queue.pop(0)
-            self.fc_attempt = 1
+            self.failed_carriers = [] # Reset blacklist for new mission
             self.set_state(STATE_TRAVEL_TO_FC)
         else:
             if self.mission_turned_in:
@@ -245,31 +242,65 @@ class WingMining:
         logger.info(f"Switching to station index {self.current_station_idx}")
         self.set_state(STATE_TRAVEL_TO_STATION)
 
+    def _find_best_carrier(self, commodity, blacklisted_carriers=[]):
+        try:
+            with open('discord_data.json', 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            logger.error("discord_data.json not found.")
+            return None, None
+        except json.JSONDecodeError:
+            logger.error("Error decoding discord_data.json.")
+            return None, None
+
+        commodity = commodity.capitalize()
+        stations_data = data.get('stations', {})
+        
+        station_configs = [
+            self._get_current_station_name(),
+            self.station_b if self.current_station_idx == 0 else self.station_a
+        ]
+
+        for station_config in station_configs:
+            system, config_station_name = station_config.split('/')
+            for json_station in stations_data.keys():
+                if json_station.upper() in config_station_name.upper():
+                    carriers = stations_data[json_station]
+                    best_carrier_name = None
+                    max_quantity = 0
+                    for carrier in carriers:
+                        if carrier.get('carrier_name') in blacklisted_carriers:
+                            continue
+                        
+                        if carrier.get('commodity').lower() == commodity.lower() and carrier.get('quantity') > max_quantity:
+                            max_quantity = carrier.get('quantity')
+                            best_carrier_name = carrier.get('carrier_name')
+                    
+                    if best_carrier_name:
+                        logger.info(f"Found best carrier '{best_carrier_name}' at '{json_station}' with {max_quantity} of {commodity}.")
+                        return best_carrier_name, system
+        
+        logger.warning(f"No carrier found for commodity {commodity} at any station.")
+        return None, None
+
     def _handle_travel_to_fc(self):
-        commodity = self.current_mission['commodity'].lower()
-        if self.fc_attempt == 1:
-            fc_name = self.fc_config[self.current_station_idx][commodity]
-        else:
-            fc_name = self.fc_config_2[self.current_station_idx][commodity]
+        commodity = self.current_mission['commodity']
+        fc_name, system = self._find_best_carrier(commodity, self.failed_carriers)
 
         if not fc_name:
-            logger.error(f"No Fleet Carrier configured for {commodity} at station index {self.current_station_idx} (attempt {self.fc_attempt})")
-            if self.fc_attempt == 1:
-                logger.info("Trying secondary FC.")
-                self.fc_attempt = 2
-                self.set_state(STATE_TRAVEL_TO_FC)
-            else:
-                logger.error("No secondary FC configured, re-queuing mission.")
-                self.mission_queue.insert(0, self.current_mission)
-                self.set_state(STATE_PROCESS_QUEUE)
+            logger.error(f"No Fleet Carrier found for {commodity}. Returning to station to wait.")
+            self.set_state(STATE_WAIT_AND_RECHECK)
             return
-
+        
+        self.current_carrier_name = fc_name
         self.ap.update_ap_status(f"Traveling to FC: {fc_name} for {self.current_mission['commodity']}")
-        system, station = fc_name.split('/')
-        if self.ap.travel_to_destination(system, station):
+        
+        if self.ap.travel_to_destination(system, fc_name):
             self.set_state(STATE_BUY_COMMODITY)
         else:
-            self.stop()
+            logger.error(f"Failed to travel to {fc_name}. Blacklisting and retrying.")
+            self.failed_carriers.append(fc_name)
+            self.set_state(STATE_TRAVEL_TO_FC)
 
     def _handle_buy_commodity(self):
         try:
@@ -277,14 +308,9 @@ class WingMining:
             if self.ap.stn_svcs_in_ship.buy_commodity_for_mission(self.current_mission):
                 self.set_state(STATE_TRAVEL_TO_TURN_IN)
             else:
-                if self.fc_attempt == 1:
-                    logger.warning(f"Failed to buy commodity, trying secondary FC.")
-                    self.fc_attempt = 2
-                    self.set_state(STATE_TRAVEL_TO_FC)
-                else:
-                    logger.warning(f"Failed to buy commodity from secondary FC, re-queuing mission: {self.current_mission}")
-                    self.mission_queue.insert(0, self.current_mission)
-                    self.set_state(STATE_PROCESS_QUEUE)
+                logger.warning(f"Failed to buy commodity from {self.current_carrier_name}. Blacklisting and retrying.")
+                self.failed_carriers.append(self.current_carrier_name)
+                self.set_state(STATE_TRAVEL_TO_FC)
         except Exception as e:
             logger.error(f"Exception caught in _handle_buy_commodity: {e}")
             logger.error(traceback.format_exc())
@@ -314,6 +340,32 @@ class WingMining:
             logger.warning(f"Failed to turn in mission, re-queuing: {self.current_mission}")
             self.mission_queue.insert(0, self.current_mission)
 
+        self.current_mission = None
+        self.set_state(STATE_PROCESS_QUEUE)
+
+    def _handle_wait_and_recheck(self):
+        station_name = self._get_current_station_name()
+        self.ap.update_ap_status(f"Returning to {station_name} to wait.")
+        system, station = station_name.split('/')
+        
+        ship_state = self.ap.jn.ship_state()
+        if not (ship_state['status'] == 'in_station' and ship_state['cur_station'] == station):
+            if not self.ap.travel_to_destination(system, station):
+                logger.error(f"Failed to travel back to {station_name}. Stopping.")
+                self.stop()
+                return
+        
+        ship_state = self.ap.jn.ship_state()
+        if not (ship_state['status'] == 'in_station' and ship_state['cur_station'] == station):
+            logger.error(f"Failed to confirm docking at {station_name} after traveling. Stopping.")
+            self.stop()
+            return
+
+        self.ap.update_ap_status("Waiting for 5 minutes before rechecking for carriers.")
+        logger.info("Waiting for 5 minutes before rechecking for carriers.")
+        sleep(300)
+
+        self.mission_queue.insert(0, self.current_mission)
         self.current_mission = None
         self.set_state(STATE_PROCESS_QUEUE)
 
