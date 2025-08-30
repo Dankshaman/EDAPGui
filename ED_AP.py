@@ -1457,7 +1457,11 @@ class EDAutopilot:
                 # Coarse alignment using compass
                 # This uses blocking moves with long hold times
                 sleep_duration = 0.5
-                if abs(nav_offset['roll']) > nav_close and (180 - abs(nav_offset['roll']) > nav_close):
+                # Roll if the nav point is not directly behind us.
+                can_roll = ((-180 + nav_close) < nav_offset['yaw'] < (180 - nav_close) and
+                            (-180 + nav_close) < nav_offset['pit'] < (180 - nav_close))
+
+                if can_roll and abs(nav_offset['roll']) > nav_close and (180 - abs(nav_offset['roll']) > nav_close):
                     sleep_duration = 1.0
                     if nav_offset['yaw'] > 0 and nav_offset['pit'] > 0:
                         self.rotateRight(nav_offset['roll'])
@@ -1603,7 +1607,10 @@ class EDAutopilot:
                 if abs(nav_offset['yaw']) > nav_close or abs(nav_offset['pit']) > nav_close:
                     sleep_duration = 0.5
                     # Roll
-                    if abs(nav_offset['roll']) > nav_close and (180 - abs(nav_offset['roll']) > nav_close):
+                    # Roll if the nav point is not directly behind us.
+                    can_roll = ((-180 + nav_close) < nav_offset['yaw'] < (180 - nav_close) and
+                                (-180 + nav_close) < nav_offset['pit'] < (180 - nav_close))
+                    if can_roll and abs(nav_offset['roll']) > nav_close and (180 - abs(nav_offset['roll']) > nav_close):
                         sleep_duration = 1.0  # Roll takes longer
                         if nav_offset['yaw'] > 0 and nav_offset['pit'] > 0:
                             self.rotateRight(nav_offset['roll'])
