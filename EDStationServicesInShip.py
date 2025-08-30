@@ -590,6 +590,7 @@ class EDStationServicesInShip:
 
         self.ap_ckb('log+vce', "Successfully entered Mission Board.")
         logger.debug("goto_mission_board: success")
+        sleep(5) # backup wait
         return True
 
 
