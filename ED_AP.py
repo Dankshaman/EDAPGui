@@ -1516,7 +1516,7 @@ class EDAutopilot:
                     self.ap_ckb('log+vce', 'Disengage Supercruise')
                     self.keys.send('HyperSuperCombination')
                     self.stop_sco_monitoring()
-                    return False  # Success
+                    return 'disengaged'  # Success
 
             if self.is_destination_occluded(scr_reg):
                 # Occlusion should also interrupt and be handled by the main loop.
@@ -1605,8 +1605,10 @@ class EDAutopilot:
                     if target_offset['y'] > target_close: self.keys.send('PitchUpButton', hold=hold_pitch)
                     if target_offset['y'] < -target_close: self.keys.send('PitchDownButton', hold=hold_pitch)
 
-                sleep_interrupted = not self.smart_sleep(0.02, scr_reg)
-                if sleep_interrupted:
+                sleep_result = self.smart_sleep(0.02, scr_reg)
+                if sleep_result == 'disengaged':
+                    return True
+                if not sleep_result:
                     continue  # A critical event happened during the sleep
 
             else:
@@ -1640,13 +1642,17 @@ class EDAutopilot:
                         else:
                             self.yawRight(abs(nav_offset['yaw']))
 
-                    sleep_interrupted = not self.smart_sleep(sleep_duration, scr_reg)
-                    if sleep_interrupted:
+                    sleep_result = self.smart_sleep(sleep_duration, scr_reg)
+                    if sleep_result == 'disengaged':
+                        return True
+                    if not sleep_result:
                         continue  # A critical event happened
                 else:
                     # Aligned via compass, but no target. Just wait.
-                    sleep_interrupted = not self.smart_sleep(0.1, scr_reg)
-                    if sleep_interrupted:
+                    sleep_result = self.smart_sleep(0.1, scr_reg)
+                    if sleep_result == 'disengaged':
+                        return True
+                    if not sleep_result:
                         continue
 
     def occluded_reposition(self, scr_reg):
