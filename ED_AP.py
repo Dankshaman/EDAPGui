@@ -17,6 +17,7 @@ from EDShipControl import EDShipControl
 from EDStationServicesInShip import EDStationServicesInShip
 from EDSystemMap import EDSystemMap
 from EDlogger import logging
+from DiscordBot import DiscordBot
 import Image_Templates
 import Screen
 import Screen_Regions
@@ -286,6 +287,10 @@ class EDAutopilot:
         if doThread:
             self.ap_thread = kthread.KThread(target=self.engine_loop, name="EDAutopilot")
             self.ap_thread.start()
+
+        self.discord_bot = None
+        if self.config.get('DiscordWebhook', False):
+            self.discord_bot = DiscordBot(self.config.get('DiscordWebhookURL'), self.config.get('DiscordUserID'))
 
     @property
     def tce_integration(self) -> TceIntegration:
