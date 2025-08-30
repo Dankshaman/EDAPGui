@@ -1549,6 +1549,7 @@ class EDAutopilot:
         close_enough_for_target_align = 5
         nav_close = 3
         target_close = 6
+        compass_align_count = 0
 
         while True:
             # Check ship status first
@@ -1594,6 +1595,7 @@ class EDAutopilot:
 
             if use_target_align:
                 # Visual Target Alignment Logic
+                compass_align_count = 0
                 if (abs(target_offset['x']) > target_close) or (abs(target_offset['y']) > target_close):
                     hold_yaw = 0.09
                     if abs(target_offset['x']) > 25: hold_yaw = 0.2
@@ -1613,6 +1615,13 @@ class EDAutopilot:
 
             else:
                 # Compass Alignment Logic
+                compass_align_count += 1
+                logger.debug(f"Compass alignment attempt: {compass_align_count}")
+                if compass_align_count > 30:
+                    self.ap_ckb('log+vce', "Compass alignment timed out, flying straight for 5 seconds")
+                    sleep(5)
+                    compass_align_count = 0
+                    continue
                 if abs(nav_offset['yaw']) > nav_close or abs(nav_offset['pit']) > nav_close:
                     sleep_duration = 0.5
                     # Roll
