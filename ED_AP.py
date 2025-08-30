@@ -17,6 +17,7 @@ from EDShipControl import EDShipControl
 from EDStationServicesInShip import EDStationServicesInShip
 from EDSystemMap import EDSystemMap
 from EDlogger import logging
+from DiscordBot import DiscordBot
 import Image_Templates
 import Screen
 import Screen_Regions
@@ -286,6 +287,10 @@ class EDAutopilot:
         if doThread:
             self.ap_thread = kthread.KThread(target=self.engine_loop, name="EDAutopilot")
             self.ap_thread.start()
+
+        self.discord_bot = None
+        if self.config.get('DiscordWebhook', False):
+            self.discord_bot = DiscordBot(self.config.get('DiscordWebhookURL'), self.config.get('DiscordUserID'))
 
     @property
     def tce_integration(self) -> TceIntegration:
@@ -1508,8 +1513,10 @@ class EDAutopilot:
 
             if self.sc_disengage_label_up(scr_reg):
                 if self.sc_disengage_active(scr_reg):
-                    # Disengage is a critical exit, we should not continue.
-                    return False
+                    self.ap_ckb('log+vce', 'Disengage Supercruise')
+                    self.keys.send('HyperSuperCombination')
+                    self.stop_sco_monitoring()
+                    return False  # Success
 
             if self.is_destination_occluded(scr_reg):
                 # Occlusion should also interrupt and be handled by the main loop.

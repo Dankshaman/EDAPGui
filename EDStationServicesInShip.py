@@ -872,6 +872,8 @@ class EDStationServicesInShip:
                                     else:
                                         logger.warning("Did not find MissionAccepted event in journal")
                                     sleep(5)
+                                    self.keys.send('UI_Up') # Move up one to make sure we scan the next mission proper.
+                                    sleep(0.5)
                                     break # Move to next mission in list
             self.keys.send('UI_Down')
 

@@ -31,45 +31,58 @@ def parse_and_format_text(raw_text):
             "DARLTON": []
         }
     }
-
-    # Define all known station headers to act as delimiters
-    all_station_headers = ["MBUTAS BURKIN", "DARLTON", "WALLY BEI MALERBA", "SWANSON"]
-    pattern = "|".join(all_station_headers)
     
-    # Split the text by the station headers, keeping the delimiters
-    parts = re.split(f'({pattern})', raw_text)
-    
+    lines = raw_text.split('\n')
     current_station_key = None
-    for part in parts:
-        if part in all_station_headers:
-            if part == "MBUTAS BURKIN":
-                current_station_key = "BURKIN"
-            elif part == "DARLTON":
-                current_station_key = "DARLTON"
-            else:
-                current_station_key = None # Ignore other stations
-        elif current_station_key and part.strip():
-            # This part is the text block for a station of interest
-            text_block = part
-            
-            # Regex to find all carrier entries in the block
-            carrier_matches = re.findall(r'([A-Za-z\s]+?)\s+x\s+([\d,O]+)\s+Tons\s+-\s+(.+?)\s+\(([A-Z0-9-]{7})\)', text_block)
-            
-            for match in carrier_matches:
-                commodity = match[0].strip()
-                quantity_str = match[1].replace(',', '').replace('O', '0')
-                quantity = int(quantity_str)
-                carrier_name_part = match[2].strip()
-                carrier_id = match[3].strip()
+    known_commodities = ["BERTRANDITE", "GOLD", "INDITE", "SILVER"]
 
-                carrier_name = f"{carrier_name_part} {carrier_id}"
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
 
-                carrier_data = {
-                    "carrier_name": carrier_name,
-                    "commodity": commodity,
-                    "quantity": quantity
-                }
-                output["stations"][current_station_key].append(carrier_data)
+        # Pre-process line to handle common OCR errors
+        processed_line = line.upper().replace('0', 'O').replace('1', 'I').replace('L', 'I')
+
+        # State machine to determine current station
+        if processed_line == "BURKIN":
+            current_station_key = "BURKIN"
+            continue
+        elif processed_line == "DARITON" or processed_line == "DARLTON":
+             current_station_key = "DARLTON"
+             continue
+        elif "WAIISY" in processed_line or "WALLY" in processed_line or "BEI" in processed_line or "MAIERBA" in processed_line or "MALERBA" in processed_line or "SWANSON" in processed_line:
+            current_station_key = None
+            continue
+
+        if current_station_key:
+            # Check if the line starts with a known commodity
+            found_commodity = None
+            for comm in known_commodities:
+                if processed_line.startswith(comm):
+                    found_commodity = comm
+                    break
+            
+            if found_commodity:
+                # The rest of the line should contain the carrier info.
+                # We can now use a more targeted regex.
+                line_after_commodity = line[len(found_commodity):].strip()
+                match = re.search(r'x\s+([\d,O]+)\s+Tons\s+-\s+(.+?)\s+\(([A-Za-z0-9-]{7})\)', line_after_commodity)
+                
+                if match:
+                    quantity_str = match.group(1).replace(',', '').replace('O', '0')
+                    quantity = int(quantity_str)
+                    carrier_name_part = match.group(2).strip()
+                    carrier_id = match.group(3).strip()
+
+                    carrier_name = f"{carrier_name_part} {carrier_id}".upper()
+
+                    carrier_data = {
+                        "carrier_name": carrier_name,
+                        "commodity": found_commodity.capitalize(), # Use the cleaned commodity name
+                        "quantity": quantity
+                    }
+                    output["stations"][current_station_key].append(carrier_data)
 
     return output
 
@@ -95,7 +108,8 @@ def main():
             ocr_textlist = ocr.image_simple_ocr(image)
 
             if ocr_textlist:
-                raw_text = " ".join(ocr_textlist).strip()
+                # Join with newlines to preserve multi-line structure
+                raw_text = "\n".join(ocr_textlist)
                 
                 formatted_data = parse_and_format_text(raw_text)
 
