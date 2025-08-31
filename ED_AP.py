@@ -17,7 +17,6 @@ from EDShipControl import EDShipControl
 from EDStationServicesInShip import EDStationServicesInShip
 from EDSystemMap import EDSystemMap
 from EDlogger import logging
-from DiscordBot import DiscordBot
 import Image_Templates
 import Screen
 import Screen_Regions
@@ -33,7 +32,6 @@ from Overlay import *
 from StatusParser import StatusParser
 from Voice import *
 from Robigo import *
-from WingMining import WingMining
 from TCE_Integration import TceIntegration
 from EDFleetCarrierAP import FleetCarrierAutopilot
 
@@ -52,6 +50,12 @@ Author: sumzer0@yahoo.com
 # Exception class used to unroll the call tree to to stop execution
 class EDAP_Interrupt(Exception):
     pass
+
+
+class ScTargetAlignReturn(Enum):
+    Lost = 1
+    Found = 2
+    Disengage = 3
 
 
 class EDAutopilot:
@@ -104,7 +108,6 @@ class EDAutopilot:
             "EDMesgActionsPort": 15570,
             "EDMesgEventsPort": 15571,
             "DebugOverlay": False,
-            "DisableLogFile": False,
         }
         # NOTE!!! When adding a new config value above, add the same after read_config() to set
         # a default value or an error will occur reading the new value!
@@ -153,8 +156,6 @@ class EDAutopilot:
                 cnf['EDMesgEventsPort'] = 15571
             if 'DebugOverlay' not in cnf:
                 cnf['DebugOverlay'] = False
-            if 'DisableLogFile' not in cnf:
-                cnf['DisableLogFile'] = False
             self.config = cnf
             logger.debug("read AP json:"+str(cnf))
         else:
@@ -193,9 +194,6 @@ class EDAutopilot:
         if self.config['LogDEBUG']:
             logger.setLevel(logging.DEBUG)
 
-        if self.config.get('DisableLogFile', False):
-            logger.disabled = True
-
         # initialize all to false
         self.fsd_assist_enabled = False
         self.sc_assist_enabled = False
@@ -205,7 +203,6 @@ class EDAutopilot:
         self.dss_assist_enabled = False
         self.single_waypoint_enabled = False
         self.fc_assist_enabled = False
-        self.wing_mining_assist_enabled = False
 
         # Create instance of each of the needed Classes
         self.gfx_settings = EDGraphicsSettings()
@@ -224,7 +221,6 @@ class EDAutopilot:
         self.ap_ckb = cb
         self.waypoint = EDWayPoint(self, self.jn.ship_state()['odyssey'])
         self.robigo = Robigo(self)
-        self.wing_mining = WingMining(self)
         self.status = StatusParser()
         self.nav_route = NavRouteParser()
         self.ship_control = EDShipControl(self, self.scr, self.keys, cb)
@@ -287,10 +283,6 @@ class EDAutopilot:
         if doThread:
             self.ap_thread = kthread.KThread(target=self.engine_loop, name="EDAutopilot")
             self.ap_thread.start()
-
-        self.discord_bot = None
-        if self.config.get('DiscordWebhook', False):
-            self.discord_bot = DiscordBot(self.config.get('DiscordWebhookURL'), self.config.get('DiscordUserID'))
 
     @property
     def tce_integration(self) -> TceIntegration:
@@ -456,26 +448,6 @@ class EDAutopilot:
         self.ap_state = txt
         self.update_overlay()
         self.ap_ckb('statusline', txt)
-
-    def get_cargo_info(self):
-        ship_state = self.jn.ship_state()
-        status_data = self.status.get_cleaned_data()
-        
-        capacity = ship_state.get('cargo_capacity')
-        current = status_data.get('Cargo')
-
-        if capacity is None:
-            logger.warning("Cargo capacity not available from journal.")
-            # Fallback or default value if necessary
-            capacity = 0 
-
-        if current is None:
-            logger.warning("Current cargo not available from status.")
-            # Fallback or default value if necessary
-            current = 0
-
-        free = capacity - current
-        return {'total': capacity, 'current': current, 'free': free}
 
 
     # draws the matching rectangle within the image
@@ -820,16 +792,13 @@ class EDAutopilot:
             self.keys.send('UseBoostJuice')
 
         # Cooldown over, get us out of here.
+        self.keys.send('Supercruise')
 
         # Start SCO monitoring
         self.start_sco_monitoring()
 
-        # Wait for jump to supercruise, keep boosting and re-trying SC key.
+        # Wait for jump to supercruise, keep boosting.
         while not self.status.get_flag(FlagsFsdJump):
-            # If not charging, try to engage supercruise
-            if not self.status.get_flag(FlagsFsdCharging):
-                self.keys.send('Supercruise')
-
             self.keys.send('UseBoostJuice')
             sleep(1)
 
@@ -1401,93 +1370,73 @@ class EDAutopilot:
             logger.debug("final x:"+str(off['x'])+" y:"+str(off['y']))
 
     def fsd_target_align(self, scr_reg):
-        """ A unified alignment function for FSD jumps.
-        """
+        """ Coarse align to the target to support FSD jumping """
+
         self.vce.say("Target Align")
-        logger.debug('align= fsd_target_align')
 
-        close_enough_for_target_align = 5
-        nav_close = 3
-        target_close = 6
+        logger.debug('align= fine align')
 
-        while True:
-            # Check for interdiction first
-            if self.interdiction_check():
-                self.keys.send('SetSpeed50')
-                self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
-                continue  # Restart alignment loop
+        close = 25
 
-            # Check for hyperspace charging, if so we are done
+        # TODO: should use Pitch Rates to calculate, but this seems to work fine with all ships
+        hold_pitch = 0.150
+        hold_yaw = 0.300
+        new = None  # Initialize to avoid unbound variable
+        off = None  # Initialize to avoid unbound variable
+        
+        for i in range(5):
+            new = self.get_destination_offset(scr_reg)
+            if new:
+                off = new
+                break
+            sleep(0.25)
+
+        # try one more time to align
+        if new is None:
+            self.nav_align(scr_reg)
+            new = self.get_destination_offset(scr_reg)
+            if new:
+                off = new
+            else:
+                logger.debug('  out of fine -not off-'+'\n')
+                return
+        
+        # Safety check to ensure off is valid before using it
+        if off is None:
+            logger.debug('  off is None, cannot continue alignment')
+            return
+            
+        while (off['x'] > close) or \
+              (off['x'] < -close) or \
+              (off['y'] > close) or \
+              (off['y'] < -close):
+
+
+            #print("off:"+str(new))
+            if off['x'] > close:
+                self.keys.send('YawRightButton', hold=hold_yaw)
+            if off['x'] < -close:
+                self.keys.send('YawLeftButton', hold=hold_yaw)
+            if off['y'] > close:
+                self.keys.send('PitchUpButton', hold=hold_pitch)
+            if off['y'] < -close:
+                self.keys.send('PitchDownButton', hold=hold_pitch)
+
             if self.jn.ship_state()['status'] == 'starting_hyperspace':
                 return
 
-            # Check for compass visibility
-            if not self.have_destination(scr_reg):
-                logger.debug("Compass not found, cannot align.")
-                sleep(1)
-                continue
+            for i in range(5):
+                sleep(0.1)
+                new = self.get_destination_offset(scr_reg)
+                if new:
+                    off = new
+                    break
+                sleep(0.25)
 
-            # Get sensor data
-            nav_offset = self.get_nav_offset(scr_reg)
-            target_offset = self.get_destination_offset(scr_reg)
-            is_occluded = self.is_destination_occluded(scr_reg)
+            if not off:
+                return
 
-            # Check if we are aligned
-            is_aligned_on_compass = abs(nav_offset['yaw']) < nav_close and abs(nav_offset['pit']) < nav_close
-            is_aligned_on_target = target_offset and abs(target_offset['x']) < target_close and abs(
-                target_offset['y']) < target_close
-
-            if is_aligned_on_compass and (is_aligned_on_target or not target_offset):
-                logger.debug('align=complete')
-                return  # We are aligned, exit the function
-
-            # Alignment logic
-            if is_occluded:
-                self.occluded_reposition(scr_reg)
-            elif target_offset and abs(nav_offset['yaw']) < close_enough_for_target_align and abs(
-                    nav_offset['pit']) < close_enough_for_target_align:
-                # Fine-grained alignment using visual target
-                # This uses blocking moves with very short hold times
-                hold_yaw = 0.09
-                if abs(target_offset['x']) > 25: hold_yaw = 0.2
-                hold_pitch = 0.075
-                if abs(target_offset['y']) > 25: hold_pitch = 0.15
-
-                if target_offset['x'] > target_close: self.keys.send('YawRightButton', hold=hold_yaw)
-                if target_offset['x'] < -target_close: self.keys.send('YawLeftButton', hold=hold_yaw)
-                if target_offset['y'] > target_close: self.keys.send('PitchUpButton', hold=hold_pitch)
-                if target_offset['y'] < -target_close: self.keys.send('PitchDownButton', hold=hold_pitch)
-                sleep(0.02)  # Mimic old sc_target_align timing
-            else:
-                # Coarse alignment using compass
-                # This uses blocking moves with long hold times
-                sleep_duration = 0.5
-                # Roll if the nav point is not directly behind us.
-                can_roll = ((-180 + nav_close) < nav_offset['yaw'] < (180 - nav_close) and
-                            (-180 + nav_close) < nav_offset['pit'] < (180 - nav_close))
-
-                if can_roll and abs(nav_offset['roll']) > nav_close and (180 - abs(nav_offset['roll']) > nav_close):
-                    sleep_duration = 1.0
-                    if nav_offset['yaw'] > 0 and nav_offset['pit'] > 0:
-                        self.rotateRight(nav_offset['roll'])
-                    elif nav_offset['yaw'] > 0 > nav_offset['pit']:
-                        self.rotateLeft(180 - nav_offset['roll'])
-                    elif nav_offset['yaw'] < 0 < nav_offset['pit']:
-                        self.rotateLeft(-nav_offset['roll'])
-                    else:
-                        self.rotateRight(180 + nav_offset['roll'])
-                elif abs(nav_offset['pit']) > nav_close:
-                    if nav_offset['pit'] < 0:
-                        self.pitchDown(abs(nav_offset['pit']))
-                    else:
-                        self.pitchUp(abs(nav_offset['pit']))
-                elif abs(nav_offset['yaw']) > nav_close:
-                    if nav_offset['yaw'] < 0:
-                        self.yawLeft(abs(nav_offset['yaw']))
-                    else:
-                        self.yawRight(abs(nav_offset['yaw']))
-
-                sleep(sleep_duration)  # Use normal sleep, as per user directive not to change movement funcs
+        logger.debug('align=complete')
 
     def mnvr_to_target(self, scr_reg):
         logger.debug('align')
@@ -1496,162 +1445,103 @@ class EDAutopilot:
             raise Exception('align() not in sc or space')
 
         self.sun_avoid(scr_reg)
+        self.nav_align(scr_reg)
         self.keys.send('SetSpeed100')
 
         self.fsd_target_align(scr_reg)
 
-    def smart_sleep(self, duration, scr_reg):
-        """ Sleeps for a given duration, but wakes up periodically to check for critical events.
-        Returns True if the sleep was completed, False if it was interrupted by an event.
+    def sc_target_align(self, scr_reg) -> ScTargetAlignReturn:
+        """ Stays tight on the target, monitors for disengage and obscured.
+        If target could not be found, return false.
+        @param scr_reg: The screen region class.
+        @return: A string detailing the reason for the method return. Current return options:
+            'lost': Lost target
+            'found': Target found
+            'disengage': Disengage text found
         """
-        start_time = time.time()
-        while time.time() - start_time < duration:
-            if self.interdiction_check():
-                # Interdiction handled. As per user request, we consider the
-                # wait complete and continue the sequence.
-                return True
 
+        close = 6
+        off = None
+
+        hold_pitch = 0.100
+        hold_yaw = 0.100
+        for i in range(5):
+            new = self.get_destination_offset(scr_reg)
+            if new:
+                off = new
+                break
             if self.is_destination_occluded(scr_reg):
-                # Occlusion should also interrupt and be handled by the main loop.
-                return False
+                self.occluded_reposition(scr_reg)
+                self.ap_ckb('log+vce', 'Target Align')
+            sleep(0.1)
 
-            sleep(0.05)
-        return True
+        # Could not be found, return
+        if off is None:
+            logger.debug("sc_target_align not finding target")
+            self.ap_ckb('log', 'Target not found, terminating SC Assist')
+            return ScTargetAlignReturn.Lost
 
-    def smart_sleep_fsd(self, duration, scr_reg):
-        """ Sleeps for a given duration, but wakes up periodically to check for critical events.
-        Returns True if the sleep was completed, False if it was interrupted by an event.
-        """
-        start_time = time.time()
-        while time.time() - start_time < duration:
-            if self.interdiction_check():
-                # Interdiction handled. As per user request, we consider the
-                # wait complete and continue the sequence.
-                return True
+        #logger.debug("sc_target_align x: "+str(off['x'])+" y:"+str(off['y']))
 
+        while (abs(off['x']) > close) or \
+                (abs(off['y']) > close):
+
+            if abs(off['x']) > 25:
+                hold_yaw = 0.2
+            else:
+                hold_yaw = 0.09
+
+            if abs(off['y']) > 25:
+                hold_pitch = 0.15
+            else:
+                hold_pitch = 0.075
+
+            #logger.debug("  sc_target_align x: "+str(off['x'])+" y:"+str(off['y']))
+
+            if off['x'] > close:
+                self.keys.send('YawRightButton', hold=hold_yaw)
+            if off['x'] < -close:
+                self.keys.send('YawLeftButton', hold=hold_yaw)
+            if off['y'] > close:
+                self.keys.send('PitchUpButton', hold=hold_pitch)
+            if off['y'] < -close:
+                self.keys.send('PitchDownButton', hold=hold_pitch)
+
+            sleep(.02)  # time for image to catch up
+
+            # this checks if suddenly the target show up behind the planet
             if self.is_destination_occluded(scr_reg):
-                # Occlusion should also interrupt and be handled by the main loop.
-                return False
+                self.occluded_reposition(scr_reg)
+                self.ap_ckb('log+vce', 'Target Align')
 
-            sleep(0.05)
-        return True
-
-    def sc_align(self, scr_reg) -> bool:
-        """ A unified alignment function for supercruise, mimicking old timing but with constant event checking.
-        """
-        close_enough_for_target_align = 5
-        nav_close = 3
-        target_close = 6
-        compass_align_count = 0
-
-        while True:
-            # Check ship status first
-            if self.jn.ship_state()['status'] != 'in_supercruise':
-                if self.status.get_flag2(Flags2GlideMode):
-                    logger.debug("Gliding")
-                    self.status.wait_for_flag2_off(Flags2GlideMode, 30)
-                    return True  # Success
-                else:
-                    logger.debug("No longer in supercruise")
-                    return False  # Failure
-
-            # Always check for critical events at the start of the loop
-            if self.interdiction_check():
-                self.keys.send('SetSpeed50')
-                self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
-                continue  # Restart loop to re-evaluate
-
-            # Get sensor data
-            nav_offset = self.get_nav_offset(scr_reg)
-            target_offset = self.get_destination_offset(scr_reg)
-
-            # Main alignment decision logic
-            use_target_align = target_offset and abs(nav_offset['yaw']) < close_enough_for_target_align and abs(
-                nav_offset['pit']) < close_enough_for_target_align
-
-            if self.sc_disengage_label_up(scr_reg) and use_target_align:
+            # check for SC Disengage
+            if self.sc_disengage_label_up(scr_reg):
                 if self.sc_disengage_active(scr_reg):
                     self.ap_ckb('log+vce', 'Disengage Supercruise')
                     self.keys.send('HyperSuperCombination')
                     self.stop_sco_monitoring()
-                    return True  # Success
+                    return ScTargetAlignReturn.Disengage
 
-            if self.is_destination_occluded(scr_reg):
-                self.occluded_reposition(scr_reg)
-                continue  # Restart loop to re-evaluate
+            new = self.get_destination_offset(scr_reg)
+            if new:
+                off = new
 
-            # Check for compass visibility before proceeding
-            if not self.have_destination(scr_reg):
-                logger.debug("Compass not found, cannot align.")
-                sleep(1)
-                continue
+            # Check if target is outside the target region (behind us) and break loop
+            if new is None:
+                logger.debug("sc_target_align lost target")
+                self.ap_ckb('log', 'Target lost, attempting re-alignment.')
+                return ScTargetAlignReturn.Lost
 
-            # Main alignment decision logic
-            if use_target_align:
-                # Visual Target Alignment Logic
-                compass_align_count = 0
-                if (abs(target_offset['x']) > target_close) or (abs(target_offset['y']) > target_close):
-                    hold_yaw = 0.09
-                    if abs(target_offset['x']) > 25: hold_yaw = 0.2
-                    hold_pitch = 0.075
-                    if abs(target_offset['y']) > 25: hold_pitch = 0.15
+        # TODO - find a better way to clear these
+        if self.debug_overlay:
+            sleep(2)
+            # self.overlay.overlay_remove_rect('sc_disengage_label_up')
+            # self.overlay.overlay_remove_floating_text('sc_disengage_label_up')
+            self.overlay.overlay_remove_rect('sc_disengage_active')
+            self.overlay.overlay_remove_floating_text('sc_disengage_active')
+            self.overlay.overlay_paint()
 
-                    if target_offset['x'] > target_close: self.keys.send('YawRightButton', hold=hold_yaw)
-                    if target_offset['x'] < -target_close: self.keys.send('YawLeftButton', hold=hold_yaw)
-                    if target_offset['y'] > target_close: self.keys.send('PitchUpButton', hold=hold_pitch)
-                    if target_offset['y'] < -target_close: self.keys.send('PitchDownButton', hold=hold_pitch)
-
-                sleep_interrupted = not self.smart_sleep(0.02, scr_reg)
-                if sleep_interrupted:
-
-                    continue  # A critical event happened during the sleep
-
-            else:
-                # Compass Alignment Logic
-                compass_align_count += 1
-                logger.debug(f"Compass alignment attempt: {compass_align_count}")
-                if compass_align_count > 15:
-                    self.ap_ckb('log+vce', "Compass alignment timed out, flying straight for 10 seconds")
-                    sleep(10)
-                    compass_align_count = 0
-                    continue
-                if abs(nav_offset['yaw']) > nav_close or abs(nav_offset['pit']) > nav_close:
-                    sleep_duration = 0.5
-                    # Roll
-                    # Roll if the nav point is not directly behind us.
-                    can_roll = ((-180 + nav_close) < nav_offset['yaw'] < (180 - nav_close) and
-                                (-180 + nav_close) < nav_offset['pit'] < (180 - nav_close))
-                    if can_roll and abs(nav_offset['roll']) > nav_close and (180 - abs(nav_offset['roll']) > nav_close):
-                        sleep_duration = 1.0  # Roll takes longer
-                        if nav_offset['yaw'] > 0 and nav_offset['pit'] > 0:
-                            self.rotateRight(nav_offset['roll'])
-                        elif nav_offset['yaw'] > 0 > nav_offset['pit']:
-                            self.rotateLeft(180 - nav_offset['roll'])
-                        elif nav_offset['yaw'] < 0 < nav_offset['pit']:
-                            self.rotateLeft(-nav_offset['roll'])
-                        else:
-                            self.rotateRight(180 + nav_offset['roll'])
-                    # Pitch
-                    elif abs(nav_offset['pit']) > nav_close:
-                        if nav_offset['pit'] < 0:
-                            self.pitchDown(abs(nav_offset['pit']))
-                        else:
-                            self.pitchUp(abs(nav_offset['pit']))
-                    # Yaw
-                    elif abs(nav_offset['yaw']) > nav_close:
-                        if nav_offset['yaw'] < 0:
-                            self.yawLeft(abs(nav_offset['yaw']))
-                        else:
-                            self.yawRight(abs(nav_offset['yaw']))
-
-                sleep_interrupted = not self.smart_sleep(0.02, scr_reg)
-                if sleep_interrupted:
-                        continue  # A critical event happened
-                else:
-                    # Aligned via compass, but no target. Just wait.
-                    sleep_interrupted = not self.smart_sleep(0.1, scr_reg)
-                    if sleep_interrupted:
-                        continue
+        return ScTargetAlignReturn.Found
 
     def occluded_reposition(self, scr_reg):
         """ Reposition is use when the target is occluded by a planet or other.
@@ -1671,6 +1561,7 @@ class EDAutopilot:
         self.keys.send('SetSpeed50')
         sleep(5)
         self.pitchUp(90)
+        self.nav_align(scr_reg)
         self.keys.send('SetSpeed50')
 
     def honk(self):
@@ -1725,23 +1616,18 @@ class EDAutopilot:
 
         # Need time to move past Sun, account for slowed ship if refuled
         pause_time = add_time
-        if self.config["EnableRandomness"]:
-            pause_time = pause_time + random.randint(0, 3)
+        if self.config["EnableRandomness"] == True:
+            pause_time = pause_time+random.randint(0, 3)
         # need time to get away from the Sun so heat will disipate before we use FSD
-        if not self.smart_sleep_fsd(pause_time, scr_reg):
-            logger.warning("Positioning maneuver interrupted.")
-            return False  # Propagate the interruption signal
+        sleep(pause_time)
 
-        if self.config["ElwScannerEnable"]:
+        if self.config["ElwScannerEnable"] == True:
             self.fss_detect_elw(scr_reg)
-            random_sleep = random.randint(0, 3) if self.config["EnableRandomness"] else 0
-            if not self.smart_sleep_fsd(3 + random_sleep, scr_reg):
-                logger.warning("Positioning maneuver interrupted.")
-                return False
+            if self.config["EnableRandomness"] == True:
+                sleep(random.randint(0, 3))
+            sleep(3)
         else:
-            if not self.smart_sleep_fsd(5, scr_reg):
-                logger.warning("Positioning maneuver interrupted.")
-                return False
+            sleep(5)  # since not doing FSS, need to give a little more time to get away from Sun, for heat
 
         logger.debug('position=complete')
         return True
@@ -2182,12 +2068,7 @@ class EDAutopilot:
 
                 self.update_ap_status("Maneuvering")
 
-                position_ok = self.position(scr_reg, refueled)
-                if not position_ok:
-                    # This now only happens on a disengage or other critical event (not interdiction).
-                    # We should abort the FSD assist sequence.
-                    logger.warning("FSD assist aborted during positioning.")
-                    break
+                self.position(scr_reg, refueled)
 
                 if self.jn.ship_state()['fuel_percent'] < self.config['FuelThreasholdAbortAP']:
                     self.ap_ckb('log', "AP Aborting, low fuel")
@@ -2236,23 +2117,68 @@ class EDAutopilot:
             self.sc_engage()
 
         # Ensure we are 50%, don't want the loop of shame
+        # Align Nav to target
+        self.keys.send('SetSpeed50')
+        self.nav_align(scr_reg)  # Compass Align
         self.keys.send('SetSpeed50')
 
         self.jn.ship_state()['interdicted'] = False
 
         # Loop forever keeping tight align to target, until we get SC Disengage popup
         self.ap_ckb('log+vce', 'Target Align')
-        align_failed = not self.sc_align(scr_reg)
+        while True:
+            sleep(0.05)
+            if self.jn.ship_state()['status'] == 'in_supercruise':
+                # Align and stay on target. If false is returned, we have lost the target behind us.
+                align_res = self.sc_target_align(scr_reg)
+                if align_res == ScTargetAlignReturn.Lost:
+                    # Continue ahead before aligning to prevent us circling the target
+                    # self.keys.send('SetSpeed100')
+                    sleep(10)
+                    self.keys.send('SetSpeed50')
+                    self.nav_align(scr_reg)  # Compass Align
 
-        # if no error, we must have gotten disengage
-        # Cleanup CV windows
+                elif align_res == ScTargetAlignReturn.Found:
+                    pass
+
+                elif align_res == ScTargetAlignReturn.Disengage:
+                    break
+
+            elif self.status.get_flag2(Flags2GlideMode):
+                # Gliding - wait to complete
+                logger.debug("Gliding")
+                self.status.wait_for_flag2_off(Flags2GlideMode, 30)
+                break
+            else:
+                # if we dropped from SC, then we rammed into planet
+                logger.debug("No longer in supercruise")
+                align_failed = True
+                break
+
+            # check if we are being interdicted
+            interdicted = self.interdiction_check()
+            if interdicted:
+                # Continue journey after interdiction
+                self.keys.send('SetSpeed50')
+                self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)  # Wait to get back into supercruise
+                self.nav_align(scr_reg)  # realign with station
+
+            # check for SC Disengage
+            if self.sc_disengage_label_up(scr_reg):
+                if self.sc_disengage_active(scr_reg):
+                    self.ap_ckb('log+vce', 'Disengage Supercruise')
+                    self.keys.send('HyperSuperCombination')
+                    self.stop_sco_monitoring()
+                    break
+
+        # TODO - find a better way to clear these
         if self.debug_overlay:
-            sleep(1)
-            # self.overlay.overlay_remove_rect('sc_disengage_label_up')
-            # self.overlay.overlay_remove_floating_text('sc_disengage_label_up')
+            sleep(2)
             self.overlay.overlay_remove_rect('sc_disengage_active')
             self.overlay.overlay_remove_floating_text('sc_disengage_active')
             self.overlay.overlay_paint()
+
+        # if no error, we must have gotten disengage
         if not align_failed and do_docking:
             sleep(4)  # wait for the journal to catch up
 
@@ -2287,14 +2213,10 @@ class EDAutopilot:
             self.keys.send('SetSpeedZero')  # make sure we don't continue to land
             self.ap_ckb('log', "Supercruise dropped, terminating SC Assist")
 
-
         self.ap_ckb('log+vce', "Supercruise Assist complete")
 
     def robigo_assist(self):
         self.robigo.loop(self)
-
-    def wing_mining_assist(self):
-        self.wing_mining.run()
 
     # Simply monitor for Shields down so we can boost away or our fighter got destroyed
     # and thus redeploy another one
@@ -2328,21 +2250,19 @@ class EDAutopilot:
                     self._prev_star_system = cur_star_system
                     self.update_ap_status("Idle")
 
-    def travel_to_destination(self, system, station):
-        """ Travel to a system or station or both. This is a blocking call."""
-        if system == "" and station == "":
+    def single_waypoint_assist(self):
+        """ Travel to a system or station or both."""
+        if self._single_waypoint_system == "" and self._single_waypoint_station == "":
             return False
 
-        already_in_system = self.jn.ship_state()['location'] == system
-
-        if system != "" and not already_in_system:
-            self.ap_ckb('log+vce', f"Targeting system {system}.")
+        if self._single_waypoint_system != "":
+            self.ap_ckb('log+vce', f"Targeting system {self._single_waypoint_system}.")
             # Select destination in galaxy map based on name
-            res = self.galaxy_map.set_gal_map_destination_text(self, system, self.jn.ship_state)
+            res = self.galaxy_map.set_gal_map_destination_text(self, self._single_waypoint_system, self.jn.ship_state)
             if res:
                 self.ap_ckb('log', f"System has been targeted.")
             else:
-                self.ap_ckb('log+vce', f"Unable to target {system} in Galaxy Map.")
+                self.ap_ckb('log+vce', f"Unable to target {self._single_waypoint_system} in Galaxy Map.")
                 return False
 
             # Jump to destination
@@ -2350,27 +2270,11 @@ class EDAutopilot:
             if res is False:
                 return False
 
-        if station != "":
-            station_to_find = station
-            if "EXT_PANEL_ColonisationShip;".upper() in station_to_find.upper():
-                parts = station_to_find.split(';')
-                if len(parts) > 1:
-                    station_to_find = parts[1].strip()
-
-            res = self.nav_panel.select_station_by_ocr(station_to_find)
-            if not res:
-                self.ap_ckb('log+vce', f"Unable to set station by Nav-OCR.")
-                return False
-
-            res = self.supercruise_to_station(self.scrReg, station)
-            if res is False:
-                return False
-
-        return True
-
-    def single_waypoint_assist(self):
-        """ Travel to a system or station or both."""
-        self.travel_to_destination(self._single_waypoint_system, self._single_waypoint_station)
+        # Disabled until SC to station enabled.
+        # if self._single_waypoint_station != "":
+        #     res = self.supercruise_to_station(self.scrReg, self._single_waypoint_station)
+        #     if res is False:
+        #         return False
 
     # raising an exception to the engine loop thread, so we can terminate its execution
     #  if thread was in a sleep, the exception seems to not be delivered
@@ -2443,14 +2347,6 @@ class EDAutopilot:
             self.ctype_async_raise(self.ap_thread, EDAP_Interrupt)
         self.fc_assist_enabled = enable
 
-    def set_wing_mining_assist(self, enable=True):
-        if not enable and self.wing_mining_assist_enabled:
-            self.wing_mining.stop()
-        self.wing_mining_assist_enabled = enable
-        if enable:
-            # This will also reset the state machine if it was already running
-            self.wing_mining.start()
-
     def set_cv_view(self, enable=True, x=0, y=0):
         self.cv_view = enable
         self.config['Enable_CV_View'] = int(self.cv_view)  # update the config
@@ -2502,10 +2398,6 @@ class EDAutopilot:
         self.config["LogDEBUG"] = False
         self.config["LogINFO"] = True
         logger.setLevel(logging.INFO)
-
-    def set_log_file_disabled(self, enable=False):
-        self.config["DisableLogFile"] = enable
-        logger.disabled = enable
 
     # quit() is important to call to clean up, if we don't terminate the threads we created the AP will hang on exit
     # have then then kill python exec
@@ -2664,25 +2556,6 @@ class EDAutopilot:
                 self.fc_assist_enabled = False
                 self.ap_ckb('fc_stop') # This will need to be added to the GUI
                 self.update_overlay()
-
-            elif self.wing_mining_assist_enabled:
-                logger.debug("Running wing_mining_assist")
-                try:
-                    # Non-blocking call to the state machine's run method
-                    self.wing_mining_assist()
-                    # If the state machine puts itself into IDLE or DONE, we can disable the assist.
-                    if self.wing_mining.state == "IDLE" or self.wing_mining.state == "DONE":
-                        self.set_wing_mining_assist(False)
-                        self.ap_ckb('wing_mining_stop')
-                except EDAP_Interrupt:
-                    logger.debug("Caught stop exception for Wing Mining")
-                    self.set_wing_mining_assist(False)
-                    self.ap_ckb('wing_mining_stop')
-                except Exception as e:
-                    print("Trapped generic exception in Wing Mining:"+str(e))
-                    traceback.print_exc()
-                    self.set_wing_mining_assist(False)
-                    self.ap_ckb('wing_mining_stop')
 
             # Check once EDAPGUI loaded to prevent errors logging to the listbox before loaded
             if self.gui_loaded:

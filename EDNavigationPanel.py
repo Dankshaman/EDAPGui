@@ -258,7 +258,7 @@ class EDNavigationPanel:
 
         # Find item in the list
         item_found = False
-        for _ in range(300):  # Max 100 scrolls
+        for _ in range(40):  # Max 40 scrolls
             image = self.ocr.capture_region_pct(list_region)
             _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, scl_row_w, scl_row_h)
 
@@ -268,7 +268,7 @@ class EDNavigationPanel:
                                                       (0, 255, 0))
                 self.ap.overlay.overlay_paint()
 
-            if ocr_textlist is not None and item_name.upper().replace("O", "0").replace(" ", "").replace("l", "1") in str(ocr_textlist).upper().replace("O", "0").replace(" ", "").replace("l", "1"):
+            if ocr_textlist is not None and item_name.upper() in str(ocr_textlist).upper():
                 item_found = True
                 break
 
