@@ -1400,6 +1400,55 @@ class EDAutopilot:
             sleep(.1)
             logger.debug("final x:"+str(off['x'])+" y:"+str(off['y']))
 
+    def rough_nav_align(self, scr_reg):
+        """ A rough alignment using the compass. """
+        close = 2  # in degrees
+        if not (self.jn.ship_state()['status'] == 'in_supercruise' or self.jn.ship_state()['status'] == 'in_space'):
+            logger.error('align=err1, nav_align not in super or space')
+            raise Exception('nav_align not in super or space')
+
+        self.ap_ckb('log+vce', 'Rough Compass Align')
+
+        for _ in range(5):  # Loop a few times to get closer
+            off = self.get_nav_offset(scr_reg)
+
+            if abs(off['yaw']) < close and abs(off['pit']) < close:
+                return  # We are aligned enough
+
+            # Roll
+            if ((-180 + close) < off['yaw'] < (180 - close) and
+                    (-180 + close) < off['pit'] < (180 - close)):
+                if abs(off['roll']) > close and (180 - abs(off['roll']) > close):
+                    if off['yaw'] > 0 and off['pit'] > 0:
+                        self.rotateRight(off['roll'])
+                    elif off['yaw'] > 0 > off['pit']:
+                        self.rotateLeft(180 - off['roll'])
+                    elif off['yaw'] < 0 < off['pit']:
+                        self.rotateLeft(-off['roll'])
+                    else:
+                        self.rotateRight(180 + off['roll'])
+                    sleep(1)
+                    off = self.get_nav_offset(scr_reg)
+
+            # Pitch
+            if abs(off['pit']) > close:
+                if off['pit'] < 0:
+                    self.pitchDown(abs(off['pit']))
+                else:
+                    self.pitchUp(abs(off['pit']))
+                sleep(0.5)
+                off = self.get_nav_offset(scr_reg)
+
+            # Yaw
+            if abs(off['yaw']) > close:
+                if off['yaw'] < 0:
+                    self.yawLeft(abs(off['yaw']))
+                else:
+                    self.yawRight(abs(off['yaw']))
+                sleep(0.5)
+            
+            sleep(1) # Give time for ship to move
+
     def fsd_target_align(self, scr_reg):
         """ A unified alignment function for FSD jumps.
         """
@@ -1547,13 +1596,13 @@ class EDAutopilot:
         while True:
             # Check ship status first
             if self.jn.ship_state()['status'] != 'in_supercruise':
-                if self.status.get_flag2(Flags2GlideMode):
-                    logger.debug("Gliding")
-                    self.status.wait_for_flag2_off(Flags2GlideMode, 30)
-                    return True  # Success
-                else:
-                    logger.debug("No longer in supercruise")
-                    return False  # Failure
+                # if self.status.get_flag2(Flags2GlideMode):
+                #     logger.debug("Gliding")
+                #     self.status.wait_for_flag2_off(Flags2GlideMode, 30)
+                #     return True  # Success
+                # else:
+                logger.debug("No longer in supercruise")
+                return False  # Failure
 
             # Always check for critical events at the start of the loop
             if self.interdiction_check():
@@ -2219,7 +2268,6 @@ class EDAutopilot:
         # Goto cockpit view
         self.ship_control.goto_cockpit_view()
 
-        align_failed = False
         # see if we have a compass up, if so then we have a target
         if not self.have_destination(scr_reg):
             self.ap_ckb('log', "Quiting SC Assist - Compass not found. Rotate ship and try again.")
@@ -2240,53 +2288,85 @@ class EDAutopilot:
 
         self.jn.ship_state()['interdicted'] = False
 
-        # Loop forever keeping tight align to target, until we get SC Disengage popup
-        self.ap_ckb('log+vce', 'Target Align')
-        align_failed = not self.sc_align(scr_reg)
+        while True:
+            # Loop forever keeping tight align to target, until we get SC Disengage popup
+            self.ap_ckb('log+vce', 'Target Align')
+            align_ok = self.sc_align(scr_reg)
 
-        # if no error, we must have gotten disengage
-        # Cleanup CV windows
-        if self.debug_overlay:
-            sleep(1)
-            # self.overlay.overlay_remove_rect('sc_disengage_label_up')
-            # self.overlay.overlay_remove_floating_text('sc_disengage_label_up')
-            self.overlay.overlay_remove_rect('sc_disengage_active')
-            self.overlay.overlay_remove_floating_text('sc_disengage_active')
-            self.overlay.overlay_paint()
-        if not align_failed and do_docking:
-            sleep(4)  # wait for the journal to catch up
+            if align_ok:
+                # if no error, we must have gotten disengage
+                # Cleanup CV windows
+                if self.debug_overlay:
+                    sleep(1)
+                    # self.overlay.overlay_remove_rect('sc_disengage_label_up')
+                    # self.overlay.overlay_remove_floating_text('sc_disengage_label_up')
+                    self.overlay.overlay_remove_rect('sc_disengage_active')
+                    self.overlay.overlay_remove_floating_text('sc_disengage_active')
+                    self.overlay.overlay_paint()
 
-            # Check if this is a target we cannot dock at
-            skip_docking = False
-            if not self.jn.ship_state()['has_adv_dock_comp'] and not self.jn.ship_state()['has_std_dock_comp']:
-                self.ap_ckb('log', "Skipping docking. No Docking Computer fitted.")
-                skip_docking = True
+                if do_docking:
+                    sleep(4)  # wait for the journal to catch up
 
-            if not self.jn.ship_state()['SupercruiseDestinationDrop_type'] is None:
-                if (self.jn.ship_state()['SupercruiseDestinationDrop_type'].startswith("$USS_Type")
-                        # Bulk Cruisers
-                        or "-class Cropper" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
-                        or "-class Hauler" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
-                        or "-class Reformatory" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
-                        or "-class Researcher" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
-                        or "-class Surveyor" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
-                        or "-class Traveller" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
-                        or "-class Tanker" in self.jn.ship_state()['SupercruiseDestinationDrop_type']):
-                    self.ap_ckb('log', "Skipping docking. No docking privilege at MegaShips.")
-                    skip_docking = True
+                    # Check if this is a target we cannot dock at
+                    skip_docking = False
+                    if not self.jn.ship_state()['has_adv_dock_comp'] and not self.jn.ship_state()['has_std_dock_comp']:
+                        self.ap_ckb('log', "Skipping docking. No Docking Computer fitted.")
+                        skip_docking = True
 
-            if not skip_docking:
-                # go into docking sequence
-                self.dock()
-                self.ap_ckb('log+vce', "Docking complete, refueled, repaired and re-armed")
-                self.update_ap_status("Docking Complete")
+                    if not self.jn.ship_state()['SupercruiseDestinationDrop_type'] is None:
+                        if (self.jn.ship_state()['SupercruiseDestinationDrop_type'].startswith("$USS_Type")
+                                # Bulk Cruisers
+                                or "-class Cropper" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
+                                or "-class Hauler" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
+                                or "-class Reformatory" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
+                                or "-class Researcher" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
+                                or "-class Surveyor" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
+                                or "-class Traveller" in self.jn.ship_state()['SupercruiseDestinationDrop_type']
+                                or "-class Tanker" in self.jn.ship_state()['SupercruiseDestinationDrop_type']):
+                            self.ap_ckb('log', "Skipping docking. No docking privilege at MegaShips.")
+                            skip_docking = True
+
+                    if not skip_docking:
+                        # go into docking sequence
+                        self.dock()
+                        self.ap_ckb('log+vce', "Docking complete, refueled, repaired and re-armed")
+                        self.update_ap_status("Docking Complete")
+                    else:
+                        self.keys.send('SetSpeedZero')
+                break
             else:
+                self.vce.say("Dropped out of supercruise, attempting recovery")
+                self.ap_ckb('log', "Supercruise dropped, attempting recovery")
                 self.keys.send('SetSpeedZero')
-        else:
-            self.vce.say("Exiting Supercruise, setting throttle to zero")
-            self.keys.send('SetSpeedZero')  # make sure we don't continue to land
-            self.ap_ckb('log', "Supercruise dropped, terminating SC Assist")
 
+                # wait for FSD cooldown
+                if self.status.wait_for_flag_on(FlagsFsdCooldown, timeout=15):
+                    self.status.wait_for_flag_off(FlagsFsdCooldown, timeout=60)
+
+                self.keys.send('Supercruise')  # init jump to get escape vector
+                sleep(1)  # give it a sec
+                self.rough_nav_align(scr_reg)  # align to escape vector
+
+                # Now boost away from the planet until we can jump
+                self.keys.send('SetSpeed100')
+                self.keys.send('UseBoostJuice')
+
+                # Wait for FSD to start charging
+                if not self.status.wait_for_flag_on(FlagsFsdCharging, timeout=10):
+                    self.keys.send('Supercruise')  # init jump to get escape vector
+
+                if not self.status.wait_for_flag_on(FlagsSupercruise, timeout=120):
+                    self.ap_ckb('log', "Failed to re-enter supercruise. Aborting SC Assist.")
+                    self.vce.say("Failed to re-enter supercruise. Aborting.")
+                    return  # Exit sc_assist
+
+                # in SC, boost away
+                self.keys.send('UseBoostJuice')  # SCO for 5 seconds
+                sleep(5)
+                self.keys.send('UseBoostJuice')
+                self.keys.send('SetSpeed50')
+                # Loop will now re-attempt sc_align
+                self.ap_ckb('log+vce', "Re-attempting navigation to destination.")
 
         self.ap_ckb('log+vce', "Supercruise Assist complete")
 
