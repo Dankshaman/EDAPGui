@@ -1539,8 +1539,8 @@ class EDAutopilot:
     def sc_align(self, scr_reg) -> bool:
         """ A unified alignment function for supercruise, mimicking old timing but with constant event checking.
         """
-        close_enough_for_target_align = 5
-        nav_close = 3
+        close_enough_for_target_align = 8
+        nav_close = 6
         target_close = 6
         compass_align_count = 0
 
@@ -1611,8 +1611,8 @@ class EDAutopilot:
                 compass_align_count += 1
                 logger.debug(f"Compass alignment attempt: {compass_align_count}")
                 if compass_align_count > 15:
-                    self.ap_ckb('log+vce', "Compass alignment timed out, flying straight for 10 seconds")
-                    sleep(10)
+                    self.ap_ckb('log+vce', "Compass alignment timed out, flying straight for 15 seconds")
+                    sleep(15)
                     compass_align_count = 0
                     continue
                 if abs(nav_offset['yaw']) > nav_close or abs(nav_offset['pit']) > nav_close:

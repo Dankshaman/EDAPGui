@@ -39,10 +39,10 @@ def parse_and_format_text(raw_text):
     
     # Dictionary to map common OCR errors to the correct commodity name
     commodity_map = {
-        "BERTRANDITE": "Bertrandite",
-        "GOLD": "Gold", "GOID": "Gold",
-        "INDITE": "Indite", "IND1TE": "Indite",
-        "SILVER": "Silver", "SIIVER": "Silver", "SIIVER": "Silver"
+        "BERTRANDITE": "Bertrandite","BERTRANDLTE": "Bertrandte",
+        "GOLD": "Gold", "GOID": "Gold", "G0ID": "Gold", "G0LD": "Gold",
+        "INDITE": "Indite", "IND1TE": "Indite", "Indlte": "Indite", "lndlte": "Indite",
+        "SILVER": "Silver", "SIIVER": "Silver", "SLLVER": "Silver", "SIIVER": "Silver"
     }
 
     lines = raw_text.split('\n')
@@ -61,7 +61,7 @@ def parse_and_format_text(raw_text):
         elif "DARLTON" in station_check_line or "DARITON" in station_check_line:
             current_station_key = "DARLTON"
             continue
-        elif "WALLY" in station_check_line or "BEI" in station_check_line or "MALERBA" in station_check_line or "SWANSON" in station_check_line:
+        elif "WALLY" in station_check_line or "BEI" in station_check_line or "MALERBA" in station_check_line or "PAEMARA" in station_check_line or "RUKAVISHNIKOV" in station_check_line or "TERMINAL" in station_check_line or "SWANSON" in station_check_line:
             current_station_key = None
             continue
 
