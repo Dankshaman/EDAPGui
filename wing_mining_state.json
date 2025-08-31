@@ -1,0 +1,7 @@
+{
+    "state": "TRAVEL_TO_STATION",
+    "mission_queue": [],
+    "current_mission": null,
+    "current_station_idx": 1,
+    "mission_turned_in": false
+}

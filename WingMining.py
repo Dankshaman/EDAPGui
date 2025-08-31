@@ -179,8 +179,7 @@ class WingMining:
         self.ap.update_ap_status(f"Scanning for missions at {station_name}")
         self.ap.stn_svcs_in_ship.goto_mission_board()
 
-        accepted_ocr_texts = [m['ocr_text'] for m in self.mission_queue]
-        new_missions = self.ap.stn_svcs_in_ship.scan_wing_missions(accepted_ocr_texts)
+        new_missions = self.ap.stn_svcs_in_ship.scan_wing_missions()
 
         if new_missions:
             self.mission_queue.extend(new_missions)
@@ -220,8 +219,7 @@ class WingMining:
         self.ap.update_ap_status(f"Re-scanning for missions at {station_name}")
         self.ap.stn_svcs_in_ship.goto_mission_board()
 
-        accepted_ocr_texts = [m['ocr_text'] for m in self.mission_queue]
-        new_missions = self.ap.stn_svcs_in_ship.scan_wing_missions(accepted_ocr_texts)
+        new_missions = self.ap.stn_svcs_in_ship.scan_wing_missions()
 
         if new_missions:
             self.mission_queue.extend(new_missions)
