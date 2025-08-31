@@ -39,6 +39,60 @@ class OCR:
         #return self.jarowinkler.similarity(s1, s2)
         return self.sorensendice.similarity(s1, s2)
 
+    def find_best_match_in_list(self, ocr_textlist: list[str], target_text: str, threshold: float = 0.6) -> str | None:
+        """
+        Finds the best fuzzy match for a target string in a list of OCR results.
+        """
+        best_match_score = 0
+        best_match_text = None
+
+        if not ocr_textlist:
+            return None
+
+        for ocr_text in ocr_textlist:
+            # Pre-process strings
+            s1 = ocr_text.upper().replace("O", "0").replace(" ", "").replace("L", "1")
+            s2 = target_text.upper().replace("O", "0").replace(" ", "").replace("L", "1")
+            
+            score = self.string_similarity(s1, s2)
+            if score > best_match_score:
+                best_match_score = score
+                best_match_text = ocr_text
+
+        if best_match_score >= threshold:
+            return best_match_text
+        else:
+            return None
+
+    def find_fuzzy_pattern_in_text(self, text_body: str, patterns: list[str], threshold: float = 0.8) -> str | None:
+        """
+        Finds the best fuzzy matching pattern from a list that matches the start of a text body.
+        """
+        best_match_score = 0
+        best_match_pattern = None
+
+        if not text_body or not patterns:
+            return None
+
+        for pattern in patterns:
+            # Get substring of text_body to compare against
+            candidate_substring = text_body[:len(pattern)]
+            
+            # Pre-process for better comparison
+            s1 = candidate_substring.upper().replace("O", "0").replace("L", "1")
+            s2 = pattern.upper().replace("O", "0").replace("L", "1")
+
+            score = self.string_similarity(s1, s2)
+            
+            if score > best_match_score:
+                best_match_score = score
+                best_match_pattern = pattern
+        
+        if best_match_score >= threshold:
+            return best_match_pattern
+        else:
+            return None
+
     def image_ocr(self, image):
         """ Perform OCR with no filtering. Returns the full OCR data and a simplified list of strings.
         This routine is the slower than the simplified OCR.

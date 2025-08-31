@@ -411,62 +411,59 @@ class WingMining:
             return False
 
     def _find_mission_in_list(self, mission):
-        ocr_text_to_find = mission['ocr_text']
+        # We need to match the mission based on its core attributes, not the full OCR text
+        # which might include variable reward amounts.
+        target_commodity = mission['commodity']
+        target_tonnage = mission['tonnage']
 
-        # Clean up the OCR text to remove reward and other details
         mission_name_patterns = [
-            re.compile(r"Mine (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
-            re.compile(r"Mining rush for (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
-            re.compile(r"Blast out (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            "Mine",
+            "Mining rush for",
+            "Blast out",
         ]
-        
-        cleaned_text = None
-        for pattern in mission_name_patterns:
-            match = pattern.search(ocr_text_to_find)
-            if match:
-                cleaned_text = match.group(0)
-                break
-        
-        if cleaned_text:
-            if ocr_text_to_find != cleaned_text:
-                logger.info(f"Cleaned mission text for searching: '{cleaned_text}'")
-                ocr_text_to_find = cleaned_text
         
         scl_reg_list = self.ap.stn_svcs_in_ship.reg['missions_list']
         min_w, min_h = self.ap.stn_svcs_in_ship.mission_item_size['width'], self.ap.stn_svcs_in_ship.mission_item_size['height']
 
-
-        last_text = ""
         self.ap.keys.send('UI_Down')
         sleep(0.5)
 
-        item_found = False
         in_list = False
-        loop_count = 0
-        for _ in range(100):
+        for _ in range(100): # Max 100 scrolls
             image = self.ap.ocr.capture_region_pct(scl_reg_list)
             img_selected, _, ocr_textlist = self.ap.ocr.get_highlighted_item_data(image, min_w, min_h)
 
-            if img_selected is not None:
-                if not os.path.exists('debug_screenshots'):
-                    os.makedirs('debug_screenshots')
-                cv2.imwrite(f'debug_screenshots/mission_item_{loop_count}.png', img_selected)
-            
-            loop_count += 1
-
-            if ocr_textlist:
-                current_text = " ".join(ocr_textlist)
-                logger.info(f"Looking for mission: '{ocr_text_to_find}'. Found text: '{current_text}'")
-            if current_text.upper().startswith(ocr_text_to_find.upper()):
-                logger.info("Found matching mission.")
-                item_found = True
-                break
-
             if img_selected is None and in_list:
+                # End of list
                 break
-
             in_list = True
+
+            if not ocr_textlist:
+                self.ap.keys.send('UI_Down')
+                continue
+
+            details_text = " ".join(ocr_textlist)
+            logger.info(f"Scanning turn-in list: {details_text}")
+
+            matched_prefix = self.ap.ocr.find_fuzzy_pattern_in_text(details_text, mission_name_patterns)
+            if matched_prefix:
+                try:
+                    if "units of" in details_text.lower():
+                        parts = details_text.lower().split("units of")
+                        tonnage_str = parts[0].strip().split()[-1]
+                        tonnage = self.ap.stn_svcs_in_ship._parse_number_with_ocr_errors(tonnage_str)
+                        
+                        commodity_candidate = parts[1].strip().split()[0]
+                        
+                        # Fuzzy match commodity
+                        # Using string_similarity directly as we are comparing a candidate word with a known commodity
+                        if self.ap.ocr.string_similarity(commodity_candidate.upper(), target_commodity.upper()) > 0.7 and tonnage == target_tonnage:
+                            logger.info(f"Found matching mission to turn in: {details_text}")
+                            return True
+                except (IndexError, ValueError):
+                    pass # Could not parse, move to next
+            
             self.ap.keys.send('UI_Down')
             sleep(0.2)
         
-        return item_found
+        return False
