@@ -96,6 +96,7 @@ class APGui():
             "EDStationServicesInShip.size.commodity_item": {"width": 100, "height": 15},
             "EDStationServicesInShip.mission_board_header": {"rect": [0.4, 0.1, 0.6, 0.2]},
             "EDStationServicesInShip.missions_list": {"rect": [0.06, 0.25, 0.48, 0.8]},
+            "EDStationServicesInShip.mission_loaded": {"rect": [0.06, 0.25, 0.48, 0.35]},
             "EDStationServicesInShip.size.mission_item": {"width": 100, "height": 15},
             "EDGalaxyMap.cartographics": {"rect": [0.0, 0.0, 0.25, 0.25]},
             "EDSystemMap.cartographics": {"rect": [0.0, 0.0, 0.25, 0.25]},

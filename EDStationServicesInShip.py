@@ -41,6 +41,7 @@ class EDStationServicesInShip:
                     'mission_board_header': {'rect': [0.4, 0.1, 0.6, 0.2]},
                     'missions_list': {'rect': [0.06, 0.25, 0.48, 0.8]},
                     'mission_depot_tab': {'rect': [0.6, 0.15, 0.8, 0.2]},
+                    'mission_loaded': {'rect': [0.06, 0.25, 0.48, 0.35]},
                     }
         self.commodity_item_size = {"width": 100, "height": 15}
         self.mission_item_size = {"width": 100, "height": 15}
@@ -624,9 +625,20 @@ class EDStationServicesInShip:
             self.ap.keys.send("UI_Back", repeat=4)
             return False
 
+        # Wait for the "ALL" tab to be highlighted
+        scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
+        min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+        if not self.ocr.wait_for_highlighted_text(self.ap, "ALL", scl_reg_list, min_w, min_h):
+            logger.error("Could not verify that the 'ALL' tab is selected on the mission board.")
+            self.ap.keys.send("UI_Back", repeat=4)
+            return False
+
+        scl_reg_loaded = reg_scale_for_station(self.reg['mission_loaded'], self.screen.screen_width, self.screen.screen_height)
+        if not self.ocr.wait_for_any_text(self.ap, scl_reg_loaded):
+            logger.error("Timed out waiting for mission list to load after board entry.")
+
         self.ap_ckb('log+vce', "Successfully entered Mission Board.")
         logger.debug("goto_mission_board: success")
-        sleep(5) # backup wait
         return True
 
 
@@ -883,12 +895,15 @@ class EDStationServicesInShip:
         self.keys.send('UI_Right')
         sleep(0.2)
         self.keys.send('UI_Select')
-        sleep(10) # Wait for mission list to load
         
-        transport_missions = self._scan_list_for_wing_missions()
-        if transport_missions:
-            all_accepted_missions.extend(transport_missions)
-            logger.info(f"Found {len(transport_missions)} missions in TRANSPORT tab.")
+        scl_reg_loaded = reg_scale_for_station(self.reg['mission_loaded'], self.screen.screen_width, self.screen.screen_height)
+        if not self.ocr.wait_for_any_text(self.ap, scl_reg_loaded):
+            logger.error("Timed out waiting for TRANSPORT mission list to load.")
+        else:
+            transport_missions = self._scan_list_for_wing_missions()
+            if transport_missions:
+                all_accepted_missions.extend(transport_missions)
+                logger.info(f"Found {len(transport_missions)} missions in TRANSPORT tab.")
 
         # --- Scan ALL tab ---
         self.ap_ckb('log+vce', "Scanning ALL tab.")
@@ -896,12 +911,14 @@ class EDStationServicesInShip:
         self.keys.send('UI_Back')
         sleep(1)
         self.keys.send('UI_Select') # As per user, this should select the "ALL" tab
-        sleep(10) # Wait for mission list to load
-
-        all_tab_missions = self._scan_list_for_wing_missions()
-        if all_tab_missions:
-            all_accepted_missions.extend(all_tab_missions)
-            logger.info(f"Found {len(all_tab_missions)} missions in ALL tab.")
+        
+        if not self.ocr.wait_for_any_text(self.ap, scl_reg_loaded):
+            logger.error("Timed out waiting for ALL mission list to load.")
+        else:
+            all_tab_missions = self._scan_list_for_wing_missions()
+            if all_tab_missions:
+                all_accepted_missions.extend(all_tab_missions)
+                logger.info(f"Found {len(all_tab_missions)} missions in ALL tab.")
 
 
         self.ap_ckb('log+vce', f"Finished scanning mission board. Found {len(all_accepted_missions)} new missions in total.")
@@ -917,7 +934,12 @@ class EDStationServicesInShip:
         self.keys.send("UI_Down")
         sleep(1)
         self.keys.send("UI_Select")
-        sleep(10)
+        
+        scl_reg_loaded = reg_scale_for_station(self.reg['mission_loaded'], self.screen.screen_width, self.screen.screen_height)
+        if not self.ocr.wait_for_any_text(self.ap, scl_reg_loaded):
+            logger.error("Timed out waiting for mission depot list to load.")
+            return []
+
         self.ap_ckb('log+vce', "Scanning mission depot.")
         logger.debug("check_mission_depot_for_wing_missions: entered")
 

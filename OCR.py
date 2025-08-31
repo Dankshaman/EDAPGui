@@ -352,3 +352,101 @@ class OCR:
             ap.overlay.overlay_paint()
 
         return text_found
+
+    def wait_for_any_text(self, ap, region, timeout=60) -> bool:
+        """ Wait for a screen to appear by checking for any text to appear in the region.
+        @param ap: ED_AP instance.
+        @param region: The region to check in % (0.0 - 1.0).
+        @param timeout: Time to wait for screen in seconds
+        """
+        # Draw box around region
+        abs_rect = self.screen.screen_rect_to_abs(region['rect'])
+        if ap.debug_overlay:
+            ap.overlay.overlay_rect1('wait_for_any_text', abs_rect, (0, 255, 0), 2)
+            ap.overlay.overlay_paint()
+
+        start_time = time.time()
+        text_found = False
+        while True:
+            # Check for timeout.
+            if time.time() > (start_time + timeout):
+                break
+
+            img = self.capture_region_pct(region)
+            if img is None:
+                time.sleep(0.25)
+                continue
+            
+            ocr_textlist = self.image_simple_ocr(img)
+
+            # Over OCR result
+            if ap.debug_overlay:
+                ap.overlay.overlay_floating_text('wait_for_any_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
+                ap.overlay.overlay_paint()
+
+            if ocr_textlist:
+                text_found = True
+                break
+
+            time.sleep(0.25)
+
+        # Clean up screen
+        if ap.debug_overlay:
+            time.sleep(2)
+            ap.overlay.overlay_remove_rect('wait_for_any_text')
+            ap.overlay.overlay_remove_floating_text('wait_for_any_text')
+            ap.overlay.overlay_paint()
+
+        return text_found
+
+    def wait_for_highlighted_text(self, ap, text: str, region, min_w, min_h, timeout=60) -> bool:
+        """ Wait for a screen to appear by checking for highlighted text to appear in the region.
+        @param ap: ED_AP instance.
+        @param text: The text to check for.
+        @param region: The region to check in % (0.0 - 1.0).
+        @param min_w: The minimum width of the text block.
+        @param min_h: The minimum height of the text block.
+        @param timeout: Time to wait for screen in seconds
+        """
+        # Draw box around region
+        abs_rect = self.screen.screen_rect_to_abs(region['rect'])
+        if ap.debug_overlay:
+            ap.overlay.overlay_rect1('wait_for_highlighted_text', abs_rect, (0, 255, 0), 2)
+            ap.overlay.overlay_paint()
+
+        start_time = time.time()
+        text_found = False
+        while True:
+            # Check for timeout.
+            if time.time() > (start_time + timeout):
+                break
+
+            # Check if screen has appeared.
+            img = self.capture_region_pct(region)
+            if img is None:
+                time.sleep(0.25)
+                continue
+
+            found = self.is_text_in_selected_item_in_image(img, text, min_w, min_h)
+
+            # Over OCR result
+            if ap.debug_overlay:
+                # This is a bit tricky since is_text_in_selected_item_in_image doesn't return the ocr text
+                # I will just display the target text
+                ap.overlay.overlay_floating_text('wait_for_highlighted_text', f'Waiting for: {text}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
+                ap.overlay.overlay_paint()
+
+            if found:
+                text_found = True
+                break
+
+            time.sleep(0.25)
+
+        # Clean up screen
+        if ap.debug_overlay:
+            time.sleep(2)
+            ap.overlay.overlay_remove_rect('wait_for_highlighted_text')
+            ap.overlay.overlay_remove_floating_text('wait_for_highlighted_text')
+            ap.overlay.overlay_paint()
+
+        return text_found

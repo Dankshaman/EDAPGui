@@ -7,6 +7,7 @@ import os
 from EDlogger import logger
 import difflib
 import StateManager as sm
+from Screen_Regions import reg_scale_for_station
 import json
 
 # States for the Wing Mining state machine
@@ -389,8 +390,12 @@ class WingMining:
         self.ap.keys.send("UI_Down")
         sleep(1)
         self.ap.keys.send("UI_Select")
-        sleep(10)
-
+        
+        scl_reg_loaded = reg_scale_for_station(self.ap.stn_svcs_in_ship.reg['mission_loaded'], self.ap.scr.screen_width, self.ap.scr.screen_height)
+        if not self.ap.ocr.wait_for_any_text(self.ap, scl_reg_loaded):
+            logger.error("Timed out waiting for mission turn-in list to load.")
+            self.ap.keys.send("UI_Back", repeat=4)
+            return False
 
         if self._find_mission_in_list(mission):
             self.ap.keys.send("UI_Select")
