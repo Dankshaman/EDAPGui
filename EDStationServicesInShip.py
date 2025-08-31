@@ -664,7 +664,7 @@ class EDStationServicesInShip:
             "Indite": (650, 1100),
         }
 
-        min_reward = 47000000
+        min_reward = 40000000
 
         scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
         min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
@@ -733,7 +733,7 @@ class EDStationServicesInShip:
                                         sleep(1)
                                         keys.send('UI_Select') # Accept mission
                                         sleep(5)
-                                        break # Move to next mission in list
+                                        continue
                 except (IndexError, ValueError):
                     pass # Could not parse, move to next
             keys.send('UI_Down')
@@ -747,20 +747,11 @@ class EDStationServicesInShip:
         self.ap_ckb('log+vce', "Finished scanning mission board.")
         return True
 
-    def scan_wing_missions(self, accepted_ocr_texts=[]):
+    def _scan_list_for_wing_missions(self):
         """
-        Scans the mission board for specific mining missions and accepts them if they meet the criteria.
+        Scans the current mission list for wing mining missions.
+        NOTE: This function does not check for duplicates. It scans what's on screen.
         """
-        sleep(0.2)
-        self.keys.send('UI_Right')
-        sleep(0.2)
-        self.keys.send('UI_Right')
-        sleep(0.2)
-        self.keys.send('UI_Select')
-        sleep(5) # Reduced from 10
-        self.ap_ckb('log+vce', "Scanning mission board.")
-        logger.debug("scan_missions: entered")
-
         mission_name_patterns = [
             "Mine",
             "Mining rush for",
@@ -781,7 +772,7 @@ class EDStationServicesInShip:
             "Indite": (650, 1100),
         }
 
-        min_reward = 47000000
+        min_reward = 40000000
 
         accepted_missions = []
 
@@ -815,11 +806,6 @@ class EDStationServicesInShip:
 
             details_text = " ".join(ocr_textlist)
             logger.info(f"Scanning mission: {details_text}")
-
-            if details_text in accepted_ocr_texts:
-                logger.info("Skipping already accepted mission.")
-                self.keys.send('UI_Down')
-                continue
 
             # Check for exclusion patterns
             if self.ocr.find_fuzzy_pattern_in_text(details_text, exclusion_patterns):
@@ -865,7 +851,7 @@ class EDStationServicesInShip:
                                         sleep(5)
                                         self.keys.send('UI_Up') # Move up one to make sure we scan the next mission proper.
                                         sleep(0.5)
-                                        break # Move to next mission in list
+                                        continue
                 except (IndexError, ValueError):
                     pass # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')
@@ -876,8 +862,50 @@ class EDStationServicesInShip:
             self.ap.overlay.overlay_remove_floating_text('missions_list_text')
             self.ap.overlay.overlay_paint()
 
-        self.ap_ckb('log+vce', "Finished scanning mission board.")
         return accepted_missions
+
+    def scan_wing_missions(self):
+        """
+        Scans the mission board for specific mining missions and accepts them if they meet the criteria.
+        This function now scans both TRANSPORT and ALL tabs.
+        """
+        self.ap_ckb('log+vce', "Scanning mission board for wing missions (TRANSPORT and ALL tabs).")
+        logger.debug("scan_wing_missions: entered")
+
+        all_accepted_missions = []
+
+        # --- Scan TRANSPORT tab ---
+        self.ap_ckb('log+vce', "Scanning TRANSPORT tab.")
+        logger.info("Scanning TRANSPORT tab for wing missions.")
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Select')
+        sleep(5) # Wait for mission list to load
+        
+        transport_missions = self._scan_list_for_wing_missions()
+        if transport_missions:
+            all_accepted_missions.extend(transport_missions)
+            logger.info(f"Found {len(transport_missions)} missions in TRANSPORT tab.")
+
+        # --- Scan ALL tab ---
+        self.ap_ckb('log+vce', "Scanning ALL tab.")
+        logger.info("Scanning ALL tab for wing missions.")
+        self.keys.send('UI_Back')
+        sleep(1)
+        self.keys.send('UI_Select') # As per user, this should select the "ALL" tab
+        sleep(5) # Wait for mission list to load
+
+        all_tab_missions = self._scan_list_for_wing_missions()
+        if all_tab_missions:
+            all_accepted_missions.extend(all_tab_missions)
+            logger.info(f"Found {len(all_tab_missions)} missions in ALL tab.")
+
+
+        self.ap_ckb('log+vce', f"Finished scanning mission board. Found {len(all_accepted_missions)} new missions in total.")
+        return all_accepted_missions
 
     def check_mission_depot_for_wing_missions(self):
         """
@@ -958,7 +986,7 @@ class EDStationServicesInShip:
                                 # The turn-in logic will have to find it by OCR text.
                                 logger.info(f"Found pending wing mining mission in depot: {details_text}")
                                 pending_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": 0, "mission_id": None, "ocr_text": details_text})
-                                break # Move to next mission in list
+                                continue
                 except (IndexError, ValueError):
                     pass # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')
