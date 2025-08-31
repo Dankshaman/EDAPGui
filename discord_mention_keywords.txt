@@ -1,0 +1,6 @@
+error
+stop
+Total:
+found matching mission:
+found matching mission.
+wing mining complete: 20 missions done

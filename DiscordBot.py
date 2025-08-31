@@ -112,6 +112,12 @@ class DiscordBot:
     def __init__(self, webhook_url, user_id=None):
         self.webhook_url = webhook_url
         self.user_id = user_id
+        self.mention_keywords = []
+        try:
+            with open("discord_mention_keywords.txt", "r") as f:
+                self.mention_keywords = [line.strip().lower() for line in f if line.strip()]
+        except FileNotFoundError:
+            logger.warning("discord_mention_keywords.txt not found. No user mentions will be sent.")
 
     def add_emoji(self, message):
         lower_message = message.lower()
@@ -127,7 +133,17 @@ class DiscordBot:
             return
 
         content = self.add_emoji(message)
-        if self.user_id:
+
+        # Check for keywords to determine if a mention should be added
+        lower_message = message.lower()
+        
+        should_mention = False
+        for keyword in self.mention_keywords:
+            if keyword in lower_message:
+                should_mention = True
+                break
+
+        if self.user_id and should_mention:
             content = f"<@{self.user_id}> {content}"
 
         payload = {
