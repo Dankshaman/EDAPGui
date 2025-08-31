@@ -733,7 +733,8 @@ class EDStationServicesInShip:
                                         sleep(1)
                                         keys.send('UI_Select') # Accept mission
                                         sleep(5)
-                                        continue
+                                        self.keys.send('UI_Up') # Move up one to make sure we scan the next mission proper.
+                                        sleep(0.5)
                 except (IndexError, ValueError):
                     pass # Could not parse, move to next
             keys.send('UI_Down')
@@ -851,7 +852,6 @@ class EDStationServicesInShip:
                                         sleep(5)
                                         self.keys.send('UI_Up') # Move up one to make sure we scan the next mission proper.
                                         sleep(0.5)
-                                        continue
                 except (IndexError, ValueError):
                     pass # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')
@@ -883,7 +883,7 @@ class EDStationServicesInShip:
         self.keys.send('UI_Right')
         sleep(0.2)
         self.keys.send('UI_Select')
-        sleep(5) # Wait for mission list to load
+        sleep(10) # Wait for mission list to load
         
         transport_missions = self._scan_list_for_wing_missions()
         if transport_missions:
@@ -896,7 +896,7 @@ class EDStationServicesInShip:
         self.keys.send('UI_Back')
         sleep(1)
         self.keys.send('UI_Select') # As per user, this should select the "ALL" tab
-        sleep(5) # Wait for mission list to load
+        sleep(10) # Wait for mission list to load
 
         all_tab_missions = self._scan_list_for_wing_missions()
         if all_tab_missions:
@@ -985,8 +985,7 @@ class EDStationServicesInShip:
                                 # For now, let's just add it to the queue without the ID.
                                 # The turn-in logic will have to find it by OCR text.
                                 logger.info(f"Found pending wing mining mission in depot: {details_text}")
-                                pending_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": 0, "mission_id": None, "ocr_text": details_text})
-                                continue
+                                pending_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": 0, "mission_id": None, "ocr_text": details_text})transport
                 except (IndexError, ValueError):
                     pass # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')
