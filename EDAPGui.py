@@ -179,7 +179,10 @@ class APGui():
             'Reset Waypoint List': "Reset your waypoint list, \nthe waypoint assist will start again at the first point in the list.",
             'Auto-Dock Boost': "Enable boosting when disengaging from supercruise for docking.",
             'Auto-Dock Fwd Time': "Time in seconds to move forward after disengaging before attempting to dock.",
-            'Auto-Dock Delay': "Time in seconds to wait after moving forward before requesting docking."
+            'Auto-Dock Delay': "Time in seconds to wait after moving forward before requesting docking.",
+            'Enable Webhook': "Enable sending log messages to a Discord webhook.",
+            'Webhook URL': "The URL of the Discord webhook.",
+            'User ID': "Your Discord User ID to be mentioned in the message."
         }
 
         self.gui_loaded = False
@@ -221,6 +224,7 @@ class APGui():
         self.checkboxvar['Automatic logout'].set(self.ed_ap.config['AutomaticLogout'])
         self.checkboxvar['Enable Overlay'].set(self.ed_ap.config['OverlayTextEnable'])
         self.checkboxvar['Enable Voice'].set(self.ed_ap.config['VoiceEnable'])
+        self.checkboxvar['DiscordWebhook'].set(self.ed_ap.config.get('DiscordWebhook', False))
         self.checkboxvar['CUDA OCR'].set(self.ocr_calibration_data.get('use_gpu_ocr', False))
 
         self.radiobuttonvar['dss_button'].set(self.ed_ap.config['DSSButton'])
@@ -270,6 +274,11 @@ class APGui():
         self.entries['buttons']['Start SC'].insert(0, str(self.ed_ap.config['HotKey_StartSC']))
         self.entries['buttons']['Start Robigo'].insert(0, str(self.ed_ap.config['HotKey_StartRobigo']))
         self.entries['buttons']['Stop All'].insert(0, str(self.ed_ap.config['HotKey_StopAllAssists']))
+
+        self.entries['discord']['Webhook URL'].delete(0, tk.END)
+        self.entries['discord']['Webhook URL'].insert(0, self.ed_ap.config.get('DiscordWebhookURL', ''))
+        self.entries['discord']['User ID'].delete(0, tk.END)
+        self.entries['discord']['User ID'].insert(0, self.ed_ap.config.get('DiscordUserID', ''))
 
         # Wing Mining Settings
         self.entries['wing_mining_station_a'].insert(0, self.ed_ap.config.get('WingMining_StationA', ''))
@@ -616,6 +625,9 @@ class APGui():
             self.msgList.yview(tk.END)
             logger.info(msg)
 
+            if self.ed_ap.discord_bot:
+                self.ed_ap.discord_bot.send_message(msg)
+
     def set_statusbar(self, txt):
         self.statusbar.configure(text=txt)
 
@@ -699,6 +711,10 @@ class APGui():
             self.ed_ap.config['VoiceEnable'] = self.checkboxvar['Enable Voice'].get()
             self.ed_ap.config['TCEDestinationFilepath'] = str(self.TCE_Destination_Filepath.get())
             self.ed_ap.config['DebugOverlay'] = self.checkboxvar['Debug Overlay'].get()
+
+            self.ed_ap.config['DiscordWebhook'] = self.checkboxvar['DiscordWebhook'].get()
+            self.ed_ap.config['DiscordWebhookURL'] = self.entries['discord']['Webhook URL'].get()
+            self.ed_ap.config['DiscordUserID'] = self.entries['discord']['User ID'].get()
 
             # Wing Mining Settings
             self.ed_ap.config['WingMining_StationA'] = self.entries['wing_mining_station_a'].get()
@@ -943,6 +959,13 @@ class APGui():
 
         if field == 'AutoDockBoost':
             self.ed_ap.autodock_boost = self.checkboxvar['AutoDockBoost'].get()
+
+        if field == 'DiscordWebhook':
+            if self.checkboxvar['DiscordWebhook'].get():
+                from DiscordBot import DiscordBot
+                self.ed_ap.discord_bot = DiscordBot(self.ed_ap.config.get('DiscordWebhookURL'), self.ed_ap.config.get('DiscordUserID'))
+            else:
+                self.ed_ap.discord_bot = None
 
         if field == 'CUDA OCR':
             self.ocr_calibration_data['use_gpu_ocr'] = self.checkboxvar['CUDA OCR'].get()
@@ -1569,6 +1592,15 @@ class APGui():
         self.checkboxvar['ELW Scanner'] = tk.BooleanVar()
         cb_enable = ttk.Checkbutton(blk_voice, text='Enable', variable=self.checkboxvar['ELW Scanner'], command=(lambda field='ELW Scanner': self.check_cb(field)))
         cb_enable.grid(row=0, column=0, columnspan=2, sticky=(tk.W))
+
+        # discord settings block
+        blk_discord = ttk.LabelFrame(blk_settings, text="DISCORD", padding=(10, 5))
+        blk_discord.grid(row=2, column=2, padx=2, pady=2, sticky=(tk.N, tk.S, tk.E, tk.W))
+        self.checkboxvar['DiscordWebhook'] = tk.BooleanVar()
+        cb_enable_discord = ttk.Checkbutton(blk_discord, text='Enable Webhook', variable=self.checkboxvar['DiscordWebhook'], command=(lambda field='DiscordWebhook': self.check_cb(field)))
+        cb_enable_discord.grid(row=0, column=0, columnspan=2, sticky=(tk.W))
+        self.entries['discord'] = self.makeform(blk_discord, FORM_TYPE_ENTRY, ('Webhook URL', 'User ID'), 1)
+
 
         # settings button block
         blk_settings_buttons = ttk.Frame(page1)
