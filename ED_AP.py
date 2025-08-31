@@ -1561,7 +1561,15 @@ class EDAutopilot:
                 self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
                 continue  # Restart loop to re-evaluate
 
-            if self.sc_disengage_label_up(scr_reg):
+            # Get sensor data
+            nav_offset = self.get_nav_offset(scr_reg)
+            target_offset = self.get_destination_offset(scr_reg)
+
+            # Main alignment decision logic
+            use_target_align = target_offset and abs(nav_offset['yaw']) < close_enough_for_target_align and abs(
+                nav_offset['pit']) < close_enough_for_target_align
+
+            if self.sc_disengage_label_up(scr_reg) and use_target_align:
                 if self.sc_disengage_active(scr_reg):
                     self.ap_ckb('log+vce', 'Disengage Supercruise')
                     self.keys.send('HyperSuperCombination')
@@ -1578,14 +1586,7 @@ class EDAutopilot:
                 sleep(1)
                 continue
 
-            # Get sensor data
-            nav_offset = self.get_nav_offset(scr_reg)
-            target_offset = self.get_destination_offset(scr_reg)
-
             # Main alignment decision logic
-            use_target_align = target_offset and abs(nav_offset['yaw']) < close_enough_for_target_align and abs(
-                nav_offset['pit']) < close_enough_for_target_align
-
             if use_target_align:
                 # Visual Target Alignment Logic
                 compass_align_count = 0
@@ -1609,9 +1610,9 @@ class EDAutopilot:
                 # Compass Alignment Logic
                 compass_align_count += 1
                 logger.debug(f"Compass alignment attempt: {compass_align_count}")
-                if compass_align_count > 30:
-                    self.ap_ckb('log+vce', "Compass alignment timed out, flying straight for 5 seconds")
-                    sleep(5)
+                if compass_align_count > 15:
+                    self.ap_ckb('log+vce', "Compass alignment timed out, flying straight for 10 seconds")
+                    sleep(10)
                     compass_align_count = 0
                     continue
                 if abs(nav_offset['yaw']) > nav_close or abs(nav_offset['pit']) > nav_close:
