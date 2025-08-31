@@ -508,6 +508,14 @@ class EDStationServicesInShip:
         self.ap_ckb('log+vce', f"Attempting to buy {tonnage} of {commodity_name} for mission.")
         logger.info(f"Attempting to buy {tonnage} of {commodity_name} for mission.")
 
+        # Navigate to commodity market
+        if not self.goto_station_services():
+            return False, 0
+            
+        self.keys.send("UI_Right", repeat=2)
+        self.keys.send("UI_Select")
+        sleep(5) # Wait for screen to load
+
         # Determine actual quantity we can buy from market data
         self.market_parser.get_market_data()
         if not self.market_parser.can_buy_item(commodity_name):
@@ -535,14 +543,6 @@ class EDStationServicesInShip:
             return False, 0
 
         logger.info(f"Calculated quantity to buy: {qty_to_buy} of {commodity_name}.")
-
-        # Navigate to commodity market
-        if not self.goto_station_services():
-            return False, 0
-            
-        self.keys.send("UI_Right", repeat=2)
-        self.keys.send("UI_Select")
-        sleep(5) # Wait for screen to load
 
         if not self.select_buy(self.keys):
             self.ap_ckb('log+vce', "Failed to select buy tab in commodities market.")
