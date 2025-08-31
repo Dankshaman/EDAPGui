@@ -985,7 +985,7 @@ class EDStationServicesInShip:
                                 # For now, let's just add it to the queue without the ID.
                                 # The turn-in logic will have to find it by OCR text.
                                 logger.info(f"Found pending wing mining mission in depot: {details_text}")
-                                pending_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": 0, "mission_id": None, "ocr_text": details_text})transport
+                                pending_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": 0, "mission_id": None, "ocr_text": details_text})
                 except (IndexError, ValueError):
                     pass # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')
