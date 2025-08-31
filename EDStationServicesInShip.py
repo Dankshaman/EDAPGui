@@ -8,7 +8,7 @@ import ED_AP
 from MarketParser import MarketParser
 from OCR import OCR
 from StatusParser import StatusParser
-from time import sleep
+from time import sleep, time
 from EDlogger import logger
 from Screen_Regions import reg_scale_for_station, size_scale_for_station
 
@@ -40,6 +40,7 @@ class EDStationServicesInShip:
                     'commodity_quantity': {'rect': [0.4, 0.5, 0.6, 0.6]},
                     'mission_board_header': {'rect': [0.4, 0.1, 0.6, 0.2]},
                     'missions_list': {'rect': [0.06, 0.25, 0.48, 0.8]},
+                    'mission_depot_tab': {'rect': [0.6, 0.15, 0.8, 0.2]},
                     }
         self.commodity_item_size = {"width": 100, "height": 15}
         self.mission_item_size = {"width": 100, "height": 15}
@@ -67,24 +68,20 @@ class EDStationServicesInShip:
 
     def goto_station_services(self) -> bool:
         """ Goto Station Services. """
-        # Go to cockpit view
+        scl_reg = reg_scale_for_station(self.reg['connected_to'], self.screen.screen_width, self.screen.screen_height)
+
+        # If not, go to cockpit view and navigate
         self.ap.ship_control.goto_cockpit_view()
 
         self.keys.send("UI_Up", repeat=3)  # go to very top (refuel line)
         self.keys.send("UI_Down")  # station services
         self.keys.send("UI_Select")  # station services
 
-        # Scale the regions based on the target resolution.
-        scl_reg = reg_scale_for_station(self.reg['connected_to'], self.screen.screen_width, self.screen.screen_height)
-
         # Wait for screen to appear
-        res = self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_CONNECTED_TO"]], scl_reg)
+        if not self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_CONNECTED_TO"]], scl_reg):
+            logger.error("Failed to open station services.")
+            return False
 
-        # Store image
-        # image = self.screen.get_screen_rect_pct(scl_reg['rect'])
-        # cv2.imwrite(f'test/station-services/station-services.png', image)
-
-        # After the OCR timeout, station services will have appeared, to return true anyway.
         return True
 
     def goto_construction_services(self) -> bool:
@@ -155,7 +152,26 @@ class EDStationServicesInShip:
         Sets the quantity of an item using OCR verification.
         Assumes the UI is on the buy/sell panel.
         """
-        sleep(0.5)  # give time to popup
+        # Wait for the buy/sell panel to appear
+        start_time = time()
+        panel_found = False
+        min_w, min_h = size_scale_for_station(self.commodity_item_size['width'], self.commodity_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+        while time() - start_time < 10:
+            image = self.ocr.capture_region_pct(self.reg['commodities_list'])
+            _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+            if ocr_textlist:
+                ocr_string = str(ocr_textlist).upper()
+                if "BUY" in ocr_string or "SELL" in ocr_string or re.search(r'\d', ocr_string):
+                    panel_found = True
+                    break
+            sleep(0.2)
+            keys.send('UI_Up')  # go up to quantity, try again
+        
+        if not panel_found:
+            self.ap_ckb('log+vce', f"Error: Timed out waiting for buy/sell panel to appear for {name}.")
+            keys.send('UI_Back')
+            return False
+
         keys.send('UI_Up', repeat=2)  # go up to quantity
 
         scl_reg_qty = reg_scale_for_station(self.reg['commodity_quantity'], self.screen.screen_width,
@@ -169,24 +185,43 @@ class EDStationServicesInShip:
         if max_qty:
             keys.send("UI_Right", hold=4)
         else:
-            keys.send('UI_Left', hold=4.0) # Reset to 1
-            sleep(0.2)
-            if act_qty > 1:
-                keys.send('UI_Right', repeat=act_qty - 1, fast=True)
+            # Smart reset to 1
+            keys.send('UI_Left', state=1) # Press and hold left
+            try:
+                start_time = time()
+                qty_is_one = False
+                while time() - start_time < 4: # 4 second timeout
+                    img_qty = self.ocr.capture_region_pct(scl_reg_qty)
+                    gray_image = cv2.cvtColor(img_qty, cv2.COLOR_BGR2GRAY)
+                    _, processed_img = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY_INV)
+                    ocr_text = self.ocr.image_simple_ocr(processed_img)
+                    current_qty = self._parse_quantity(ocr_text)
+                    if current_qty == 0:
+                        qty_is_zero = True
+                        break
+                    sleep(0.1)
+                if not qty_is_zero:
+                    logger.warning("Timed out waiting for quantity to reset to 0.")
+            finally:
+                keys.send('UI_Left', state=0) # Release left
+
+            if act_qty > 0:
+                keys.send('UI_Right', repeat=act_qty, fast=True)
         
         sleep(0.5)
 
-        # Verify final quantity
-        img_qty = self.ocr.capture_region_pct(scl_reg_qty)
-        
-        # --- Custom Image Processing ---
-        gray_image = cv2.cvtColor(img_qty, cv2.COLOR_BGR2GRAY)
-        # For black text on a bright background, we invert the threshold.
-        # This creates a white-on-black image which is ideal for OCR.
-        _, processed_img = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY_INV)
-        # cv2.imwrite(f'test/station-services/qty-processed-{time.time()}.png', processed_img)
-        # --- End Custom Image Processing ---
+        # Skip final verification if max_qty is True (user wants to sell maximum amount)
+        if max_qty:
+            if self.ap.debug_overlay:
+                sleep(1)
+                self.ap.overlay.overlay_remove_rect('commodity_quantity')
+                self.ap.overlay.overlay_paint()
+            return True
 
+        # Final verification
+        img_qty = self.ocr.capture_region_pct(scl_reg_qty)
+        gray_image = cv2.cvtColor(img_qty, cv2.COLOR_BGR2GRAY)
+        _, processed_img = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY_INV)
         ocr_text = self.ocr.image_simple_ocr(processed_img)
         current_qty = self._parse_quantity(ocr_text)
 
@@ -208,13 +243,8 @@ class EDStationServicesInShip:
                 sleep(0.5)
 
                 img_qty = self.ocr.capture_region_pct(scl_reg_qty)
-                
-                # --- Custom Image Processing ---
                 gray_image = cv2.cvtColor(img_qty, cv2.COLOR_BGR2GRAY)
                 _, processed_img = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY_INV)
-                # cv2.imwrite(f'test/station-services/qty-processed-{time.time()}.png', processed_img)
-                # --- End Custom Image Processing ---
-                
                 ocr_text = self.ocr.image_simple_ocr(processed_img)
                 current_qty = self._parse_quantity(ocr_text)
 
@@ -240,12 +270,16 @@ class EDStationServicesInShip:
         """
         Finds an item in a list using the "intelligent scroll" method.
         """
+        if self.ap.debug_overlay:
+            abs_rect = self.screen.screen_rect_to_abs(list_region['rect'])
+            self.ap.overlay.overlay_rect1('commodities_list_rect', abs_rect, (255, 0, 0), 2)
+            self.ap.overlay.overlay_paint()
 
         # Go to top of list
         last_text = ""
         keys.send('UI_Up', state=1)
-        for _ in range(100):  # Max 10 seconds
-            sleep(0.1)
+        for _ in range(40):  # Max 10 seconds
+            sleep(0.5)
             image = self.ocr.capture_region_pct(list_region)
             _, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
             current_text = str(ocr_textlist)
@@ -282,10 +316,34 @@ class EDStationServicesInShip:
 
         if self.ap.debug_overlay:
             sleep(1)
+            self.ap.overlay.overlay_remove_rect('commodities_list_rect')
             self.ap.overlay.overlay_remove_floating_text('commodities_list_text')
             self.ap.overlay.overlay_paint()
 
         return item_found
+
+    def _wait_for_market_list_ready(self, item_name: str, timeout=10) -> bool:
+        """
+        Waits for the market list to be ready by detecting a specific highlighted item.
+        """
+        start_time = time()
+        scl_reg = reg_scale_for_station(self.reg['commodities_list'], self.screen.screen_width,
+                                        self.screen.screen_height)
+        min_w, min_h = size_scale_for_station(self.commodity_item_size['width'], self.commodity_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+
+        while time() - start_time < timeout:
+            image = self.ocr.capture_region_pct(scl_reg)
+            img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+            
+            if img_selected is not None:
+                if ocr_textlist and item_name.upper() in str(ocr_textlist).upper():
+                    logger.debug(f"Market list is ready (item '{item_name}' is highlighted).")
+                    return True
+            
+            sleep(0.2) # Poll every 200ms
+        
+        logger.warning(f"Timed out waiting for '{item_name}' to be highlighted after {timeout}s.")
+        return False
 
     def buy_commodity(self, keys, name: str, qty: int, free_cargo: int) -> tuple[bool, int]:
         """ Buy qty of commodity. If qty >= 9999 then buy as much as possible.
@@ -356,13 +414,14 @@ class EDStationServicesInShip:
 
         return True, act_qty
 
-    def sell_commodity(self, keys, name: str, qty: int, cargo_parser) -> tuple[bool, int]:
+    def sell_commodity(self, keys, name: str, qty: int, cargo_parser, sell_one_at_a_time: bool = False) -> tuple[bool, int]:
         """ Sell qty of commodity. If qty >= 9999 then sell as much as possible.
         Assumed to be in the commodities sell screen in the list.
         @param keys: Keys class for sending keystrokes.
         @param name: Name of the commodity.
         @param qty: Quantity to sell.
         @param cargo_parser: Current cargo to check if rare or demand=1 items exist in hold.
+        @param sell_one_at_a_time: If True, sell items one at a time.
         @return: Sale successful (T/F) and Qty.
         """
 
@@ -403,20 +462,102 @@ class EDStationServicesInShip:
             self.ap_ckb('log+vce', f"Could not find '{name}' on screen in the market.")
             logger.error(f"Could not find '{name}' on screen in the market.")
             return False, 0
+        
+        if sell_one_at_a_time:
+            total_sold = 0
+            for i in range(act_qty):
+                keys.send('UI_Select')  # Select that commodity (it's already highlighted)
 
-        keys.send('UI_Select')  # Select that commodity
+                self.ap_ckb('log+vce', f"Selling 1 unit of {name} ({i + 1}/{act_qty}).")
+                if not self._set_quantity_with_ocr(keys, 1, name, False, False):
+                    # On failure, _set_quantity_with_ocr will have sent UI_Back,
+                    # so we should be on the market list screen.
+                    return False, total_sold
 
-        max_qty = qty >= 9999
-        if not self._set_quantity_with_ocr(keys, act_qty, name, False, max_qty):
+                keys.send('UI_Down')
+                keys.send('UI_Select')  # Select Sell
+                
+                if not self._wait_for_market_list_ready(name):
+                    self.ap_ckb('log+vce', f"Error: Timed out waiting for '{name}' to be highlighted after selling a unit.")
+                    return False, total_sold
+
+                total_sold += 1
+            return True, total_sold
+        else:
+            keys.send('UI_Select')  # Select that commodity
+            max_qty = qty >= 9999
+            if not self._set_quantity_with_ocr(keys, act_qty, name, False, max_qty):
+                return False, 0
+
+            keys.send('UI_Down')  # Down to the Sell button (already assume sell all)
+            keys.send('UI_Select')  # Select to Sell all
+            sleep(0.5)
+            # keys.send('UI_Back')  # Back to commodities list
+
+            return True, act_qty
+
+    def buy_commodity_for_mission(self, mission) -> tuple[bool, int]:
+        """
+        Buys a commodity required for a given mission.
+        Returns a tuple of (success, quantity_purchased).
+        """
+        commodity_name = mission['commodity']
+        tonnage = mission['tonnage']
+        free_cargo = self.ap.get_cargo_info()['free']
+
+        self.ap_ckb('log+vce', f"Attempting to buy {tonnage} of {commodity_name} for mission.")
+        logger.info(f"Attempting to buy {tonnage} of {commodity_name} for mission.")
+
+        # Navigate to commodity market
+        if not self.goto_station_services():
+            return False, 0
+            
+        self.keys.send("UI_Right", repeat=2)
+        self.keys.send("UI_Select")
+        sleep(5) # Wait for screen to load
+
+        # Determine actual quantity we can buy from market data
+        self.market_parser.get_market_data()
+        if not self.market_parser.can_buy_item(commodity_name):
+            self.ap_ckb('log+vce', f"'{commodity_name}' is not sold or has no stock at this market.")
+            logger.warning(f"'{commodity_name}' is not sold or has no stock at this market.")
             return False, 0
 
-        keys.send('UI_Down')  # Down to the Sell button (already assume sell all)
-        keys.send('UI_Select')  # Select to Sell all
-        sleep(0.5)
-        # keys.send('UI_Back')  # Back to commodities list
+        stock = 0
+        buyable_items = self.market_parser.get_buyable_items()
+        if buyable_items:
+            for item in buyable_items:
+                if item['Name_Localised'].upper() == commodity_name.upper():
+                    stock = item['Stock']
+                    break
+        
+        if stock == 0:
+            self.ap_ckb('log+vce', f"Market has zero stock of {commodity_name}.")
+            logger.warning(f"Market has zero stock of {commodity_name}.")
+            return False, 0
 
-        return True, act_qty
+        qty_to_buy = min(tonnage, stock, free_cargo)
+        if qty_to_buy <= 0:
+            self.ap_ckb('log+vce', f"Cannot buy {commodity_name}, need {tonnage}, have {free_cargo} free space, stock is {stock}.")
+            logger.warning(f"Cannot buy {commodity_name}, need {tonnage}, have {free_cargo} free space, stock is {stock}.")
+            return False, 0
 
+        logger.info(f"Calculated quantity to buy: {qty_to_buy} of {commodity_name}.")
+
+        if not self.select_buy(self.keys):
+            self.ap_ckb('log+vce', "Failed to select buy tab in commodities market.")
+            # Back out to main menu
+            self.keys.send("UI_Back", repeat=4)
+            sleep(1)
+            return False, 0
+
+        success, purchased_qty = self.buy_commodity(self.keys, commodity_name, qty_to_buy, free_cargo)
+
+        # Back to the main station services menu
+        self.keys.send("UI_Back", repeat=4)
+        sleep(1)
+
+        return success, purchased_qty
 
     def goto_fleet_carrier_management(self):
         """ Navigates to the Fleet Carrier Management screen from station services. """
@@ -465,28 +606,27 @@ class EDStationServicesInShip:
             logger.error("Could not open station services.")
             return False
 
-        sleep(0.2)
+        sleep(1) # Give it a second to load station services
+
+        # Navigate to the mission board in the station services menu
+        # This is a bit of a guess, might need calibration
         self.keys.send('UI_Select')
         sleep(0.2)
         self.keys.send('UI_Select')
-        sleep(1) # Wait for screen to load
+        sleep(2) # Wait for screen to load
 
         # Scale the regions based on the target resolution.
         scl_mission_board = reg_scale_for_station(self.reg['mission_board_header'], self.screen.screen_width, self.screen.screen_height)
 
         # Wait for screen to appear
-        res = self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_MISSION_BOARD_HEADER"]], scl_mission_board)
+        if not self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_MISSION_BOARD_HEADER"]], scl_mission_board):
+            logger.error("Could not verify that we are on the mission board.")
+            self.ap.keys.send("UI_Back", repeat=4)
+            return False
 
-        # After the OCR timeout, mission board will have appeared, to return true anyway.
         self.ap_ckb('log+vce', "Successfully entered Mission Board.")
         logger.debug("goto_mission_board: success")
-        sleep(0.2)
-        self.keys.send('UI_Right')
-        sleep(0.2)
-        self.keys.send('UI_Right')
-        sleep(0.2)
-        self.keys.send('UI_Select')
-        sleep(10)
+        sleep(5) # backup wait
         return True
 
 
@@ -494,6 +634,13 @@ class EDStationServicesInShip:
         """
         Scans the mission board for specific mining missions and accepts them if they meet the criteria.
         """
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Select')
+        sleep(5) # Reduced from 10
         self.ap_ckb('log+vce', "Scanning mission board.")
         logger.debug("scan_missions: entered")
 
@@ -522,6 +669,11 @@ class EDStationServicesInShip:
         scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
         min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
 
+        if self.ap.debug_overlay:
+            abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
+            self.ap.overlay.overlay_rect1('missions_list_rect', abs_rect, (255, 0, 0), 2)
+            self.ap.overlay.overlay_paint()
+
         # Go to top of list
         last_text = ""
         keys.send('UI_Down')
@@ -533,7 +685,6 @@ class EDStationServicesInShip:
             img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
 
             if self.ap.debug_overlay:
-                self.ap.overlay.overlay_remove_floating_text('missions_list_text')
                 abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
                 self.ap.overlay.overlay_floating_text('missions_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
                 self.ap.overlay.overlay_paint()
@@ -591,10 +742,235 @@ class EDStationServicesInShip:
             keys.send('UI_Down')
 
 
+        if self.ap.debug_overlay:
+            self.ap.overlay.overlay_remove_rect('missions_list_rect')
+            self.ap.overlay.overlay_remove_floating_text('missions_list_text')
+            self.ap.overlay.overlay_paint()
+
         self.ap_ckb('log+vce', "Finished scanning mission board.")
         return True
 
+    def scan_wing_missions(self, accepted_ocr_texts=[]):
+        """
+        Scans the mission board for specific mining missions and accepts them if they meet the criteria.
+        """
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Right')
+        sleep(0.2)
+        self.keys.send('UI_Select')
+        sleep(5) # Reduced from 10
+        self.ap_ckb('log+vce', "Scanning mission board.")
+        logger.debug("scan_missions: entered")
 
+        mission_name_patterns = [
+            re.compile(r"Mine (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Mining rush for (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Blast out (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+        ]
+
+        exclusion_patterns = [
+            re.compile(r"Bring us..", re.IGNORECASE),
+            re.compile(r"We need...", re.IGNORECASE),
+            re.compile(r"Industry Needs..", re.IGNORECASE),
+            re.compile(r"Source and return..", re.IGNORECASE),
+        ]
+
+        commodities = {
+            "Gold": (150, 250),
+            "Silver": (300, 450),
+            "Bertrandite": (600, 1000),
+            "Indite": (650, 1100),
+        }
+
+        min_reward = 47000000
+
+        accepted_missions = []
+
+        scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
+        min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+
+        if self.ap.debug_overlay:
+            abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
+            self.ap.overlay.overlay_rect1('missions_list_rect', abs_rect, (255, 0, 0), 2)
+            self.ap.overlay.overlay_paint()
+
+        # Go to top of list
+        last_text = ""
+        self.keys.send('UI_Down')
+        sleep(0.5)
+
+        in_list = False
+        for _ in range(100): # Max 100 scrolls
+            image = self.ocr.capture_region_pct(scl_reg_list)
+            img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+
+            if self.ap.debug_overlay:
+                abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
+                self.ap.overlay.overlay_floating_text('missions_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
+                self.ap.overlay.overlay_paint()
+
+            if img_selected is None and in_list:
+                # End of list
+                break
+            in_list = True
+
+            details_text = " ".join(ocr_textlist)
+            logger.info(f"Scanning mission: {details_text}")
+
+            if details_text in accepted_ocr_texts:
+                logger.info("Skipping already accepted mission.")
+                self.keys.send('UI_Down')
+                continue
+
+            # Check for exclusion patterns
+            excluded = False
+            for pattern in exclusion_patterns:
+                if pattern.search(details_text):
+                    excluded = True
+                    break
+            if excluded:
+                self.keys.send('UI_Down')
+                continue
+
+            # Check for mission name patterns
+            for pattern in mission_name_patterns:
+                match = pattern.search(details_text)
+                if match:
+                    tonnage_str, commodity_name = match.groups()
+                    tonnage = self._parse_number_with_ocr_errors(tonnage_str)
+                    commodity_name = commodity_name.strip()
+
+                    # Check commodity and tonnage
+                    parsed_commodity_name = commodity_name.strip().lower()
+                    matched_commodity = None
+                    for c_name in commodities.keys():
+                        if c_name.lower() == parsed_commodity_name:
+                            matched_commodity = c_name
+                            break
+
+                    if matched_commodity:
+                        min_ton, max_ton = commodities[matched_commodity]
+                        if min_ton <= tonnage <= max_ton:
+                            # Check reward
+                            reward_matches = re.findall(r"([\d,]+) CR", details_text, re.IGNORECASE)
+                            if reward_matches:
+                                possible_rewards = [int(r.replace(",", "")) for r in reward_matches]
+                                reward = max(possible_rewards)
+                                if reward >= min_reward:
+                                    self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
+                                    logger.info(f"Mission matched, accepting: {details_text}")
+                                    self.keys.send('UI_Select') # Select mission
+                                    sleep(1)
+                                    self.keys.send('UI_Select') # Accept mission
+                                    mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
+                                    if mission_accepted_event:
+                                        mission_id = mission_accepted_event.get('MissionID')
+                                        ocr_text = match.group(0)
+                                        accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": reward, "mission_id": mission_id, "ocr_text": ocr_text})
+                                    else:
+                                        logger.warning("Did not find MissionAccepted event in journal")
+                                    sleep(5)
+                                    self.keys.send('UI_Up') # Move up one to make sure we scan the next mission proper.
+                                    sleep(0.5)
+                                    break # Move to next mission in list
+            self.keys.send('UI_Down')
+
+
+        if self.ap.debug_overlay:
+            self.ap.overlay.overlay_remove_rect('missions_list_rect')
+            self.ap.overlay.overlay_remove_floating_text('missions_list_text')
+            self.ap.overlay.overlay_paint()
+
+        self.ap_ckb('log+vce', "Finished scanning mission board.")
+        return accepted_missions
+
+    def check_mission_depot_for_wing_missions(self):
+        """
+        Checks the mission depot for unfulfilled wing mining missions.
+        """
+        # Navigate to the mission depot tab
+        self.keys.send("UI_Right", repeat=4)
+        sleep(1)
+        self.keys.send("UI_Down")
+        sleep(1)
+        self.keys.send("UI_Select")
+        sleep(10)
+        self.ap_ckb('log+vce', "Scanning mission depot.")
+        logger.debug("check_mission_depot_for_wing_missions: entered")
+
+        mission_name_patterns = [
+            re.compile(r"Mine (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Mining rush for (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+            re.compile(r"Blast out (\S+) units of ([A-Za-z]+)", re.IGNORECASE),
+        ]
+
+        commodities = {
+            "Gold": (150, 250),
+            "Silver": (300, 450),
+            "Bertrandite": (600, 1000),
+            "Indite": (650, 1100),
+        }
+
+        pending_missions = []
+
+        scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
+        min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
+
+        # Go to top of list
+        self.keys.send('UI_Down')
+        sleep(0.5)
+
+        in_list = True
+        for _ in range(100): # Max 100 scrolls
+            image = self.ocr.capture_region_pct(scl_reg_list)
+            img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
+
+            if img_selected is None and in_list:
+                # End of list
+                break
+            in_list = True
+
+            details_text = " ".join(ocr_textlist)
+            logger.info(f"Scanning depot mission: {details_text}")
+
+            # Check if it's a completed mission
+            if "COMPLETED" in details_text.upper():
+                self.keys.send('UI_Down')
+                continue
+
+            # Check for mission name patterns
+            for pattern in mission_name_patterns:
+                match = pattern.search(details_text)
+                if match:
+                    tonnage_str, commodity_name = match.groups()
+                    tonnage = self._parse_number_with_ocr_errors(tonnage_str)
+                    commodity_name = commodity_name.strip()
+
+                    # Check commodity and tonnage
+                    parsed_commodity_name = commodity_name.strip().lower()
+                    matched_commodity = None
+                    for c_name in commodities.keys():
+                        if c_name.lower() == parsed_commodity_name:
+                            matched_commodity = c_name
+                            break
+
+                    if matched_commodity:
+                        min_ton, max_ton = commodities[matched_commodity]
+                        if min_ton <= tonnage <= max_ton:
+                            # This is a pending wing mining mission
+                            # We need to find the mission ID from the journal
+                            # This is tricky because we don't have the accept event here.
+                            # For now, let's just add it to the queue without the ID.
+                            # The turn-in logic will have to find it by OCR text.
+                            logger.info(f"Found pending wing mining mission in depot: {details_text}")
+                            pending_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": 0, "mission_id": None, "ocr_text": details_text})
+                            break # Move to next mission in list
+            self.keys.send('UI_Down')
+
+        self.ap_ckb('log+vce', "Finished scanning mission depot.")
+        return pending_missions
 
 def dummy_cb(msg, body=None):
     pass
