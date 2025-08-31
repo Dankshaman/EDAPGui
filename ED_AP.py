@@ -1409,7 +1409,7 @@ class EDAutopilot:
 
         self.ap_ckb('log+vce', 'Rough Compass Align')
 
-        for _ in range(5):  # Loop a few times to get closer
+        for _ in range(10):  # Loop a few times to get closer
             off = self.get_nav_offset(scr_reg)
 
             if abs(off['yaw']) < close and abs(off['pit']) < close:
@@ -1710,7 +1710,7 @@ class EDAutopilot:
         bring the target into view quickly. """
         self.ap_ckb('log+vce', 'Target occluded, repositioning.')
         self.keys.send('SetSpeed50')
-        sleep(5)
+        sleep(0.5)
         self.pitchDown(90)
 
         # Speed away

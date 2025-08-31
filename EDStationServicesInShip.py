@@ -670,10 +670,10 @@ class EDStationServicesInShip:
         ]
 
         commodities = {
-            "Gold": (150, 250),
-            "Silver": (300, 450),
+            "Gold": (150, 600),
+            "Silver": (300, 705),
             "Bertrandite": (600, 1000),
-            "Indite": (650, 1100),
+            "Indite": (650, 1200),
         }
 
         min_reward = 40000000
@@ -779,10 +779,10 @@ class EDStationServicesInShip:
         ]
 
         commodities = {
-            "Gold": (150, 250),
-            "Silver": (300, 450),
+            "Gold": (150, 600),
+            "Silver": (300, 705),
             "Bertrandite": (600, 1000),
-            "Indite": (650, 1100),
+            "Indite": (650, 1200),
         }
 
         min_reward = 40000000
@@ -950,10 +950,10 @@ class EDStationServicesInShip:
         ]
 
         commodities = {
-            "Gold": (150, 250),
-            "Silver": (300, 450),
+            "Gold": (150, 600),
+            "Silver": (300, 705),
             "Bertrandite": (600, 1000),
-            "Indite": (650, 1100),
+            "Indite": (650, 1200),
         }
 
         pending_missions = []
