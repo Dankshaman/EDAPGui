@@ -637,6 +637,7 @@ class EDStationServicesInShip:
 
         self.ap_ckb('log+vce', "Successfully entered Mission Board.")
         logger.debug("goto_mission_board: success")
+        sleep(0.5)
         return True
 
 
@@ -686,6 +687,7 @@ class EDStationServicesInShip:
 
         # Go to top of list
         last_text = ""
+        sleep(1)
         keys.send('UI_Down')
         sleep(0.5)
 
@@ -797,6 +799,7 @@ class EDStationServicesInShip:
 
         # Go to top of list
         last_text = ""
+        sleep(1)
         self.keys.send('UI_Down')
         sleep(0.5)
 
@@ -963,6 +966,7 @@ class EDStationServicesInShip:
         min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
 
         # Go to top of list
+        sleep(1)
         self.keys.send('UI_Down')
         sleep(0.5)
 
