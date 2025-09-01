@@ -633,9 +633,7 @@ class EDStationServicesInShip:
             self.ap.keys.send("UI_Back", repeat=4)
             return False
 
-        scl_reg_loaded = reg_scale_for_station(self.reg['mission_loaded'], self.screen.screen_width, self.screen.screen_height)
-        if not self.ocr.wait_for_any_text(self.ap, scl_reg_loaded):
-            logger.error("Timed out waiting for mission list to load after board entry.")
+
 
         self.ap_ckb('log+vce', "Successfully entered Mission Board.")
         logger.debug("goto_mission_board: success")
@@ -895,6 +893,7 @@ class EDStationServicesInShip:
         self.keys.send('UI_Right')
         sleep(0.2)
         self.keys.send('UI_Select')
+        sleep(2)
         
         scl_reg_loaded = reg_scale_for_station(self.reg['mission_loaded'], self.screen.screen_width, self.screen.screen_height)
         if not self.ocr.wait_for_any_text(self.ap, scl_reg_loaded):
@@ -911,6 +910,7 @@ class EDStationServicesInShip:
         self.keys.send('UI_Back')
         sleep(1)
         self.keys.send('UI_Select') # As per user, this should select the "ALL" tab
+        sleep(2)
         
         if not self.ocr.wait_for_any_text(self.ap, scl_reg_loaded):
             logger.error("Timed out waiting for ALL mission list to load.")
@@ -934,6 +934,7 @@ class EDStationServicesInShip:
         self.keys.send("UI_Down")
         sleep(1)
         self.keys.send("UI_Select")
+        sleep(2)
         
         scl_reg_loaded = reg_scale_for_station(self.reg['mission_loaded'], self.screen.screen_width, self.screen.screen_height)
         if not self.ocr.wait_for_any_text(self.ap, scl_reg_loaded):
