@@ -34,6 +34,7 @@ from Screen_Regions import reg_scale_for_station
 from EDJournal import *
 from ED_AP import *
 from EDAPWaypointEditor import WaypointEditorTab
+from WingMining import *
 
 from EDlogger import logger
 
@@ -95,6 +96,7 @@ class APGui():
             "EDStationServicesInShip.size.commodity_item": {"width": 100, "height": 15},
             "EDStationServicesInShip.mission_board_header": {"rect": [0.4, 0.1, 0.6, 0.2]},
             "EDStationServicesInShip.missions_list": {"rect": [0.06, 0.25, 0.48, 0.8]},
+            "EDStationServicesInShip.mission_loaded": {"rect": [0.06, 0.25, 0.48, 0.35]},
             "EDStationServicesInShip.size.mission_item": {"width": 100, "height": 15},
             "EDGalaxyMap.cartographics": {"rect": [0.0, 0.0, 0.25, 0.25]},
             "EDSystemMap.cartographics": {"rect": [0.0, 0.0, 0.25, 0.25]},
@@ -152,6 +154,7 @@ class APGui():
             'ELW Scanner': "Will perform FSS scans while FSD Assist is traveling between stars. \nIf the FSS shows a signal in the region of Earth, \nWater or Ammonia type worlds, it will announce that discovery.",
             'AFK Combat Assist': "Used with a AFK Combat ship in a Rez Zone.",
             'Fleet Carrier Assist': "Automates fleet carrier jumps along a waypoint route.",
+            'Wing Mining Assist': "Automates wing mining missions.",
             'RollRate': "Roll rate your ship has in deg/sec. Higher the number the more maneuverable the ship.",
             'PitchRate': "Pitch (up/down) rate your ship has in deg/sec. Higher the number the more maneuverable the ship.",
             'YawRate': "Yaw rate (rudder) your ship has in deg/sec. Higher the number the more maneuverable the ship.",
@@ -177,7 +180,10 @@ class APGui():
             'Reset Waypoint List': "Reset your waypoint list, \nthe waypoint assist will start again at the first point in the list.",
             'Auto-Dock Boost': "Enable boosting when disengaging from supercruise for docking.",
             'Auto-Dock Fwd Time': "Time in seconds to move forward after disengaging before attempting to dock.",
-            'Auto-Dock Delay': "Time in seconds to wait after moving forward before requesting docking."
+            'Auto-Dock Delay': "Time in seconds to wait after moving forward before requesting docking.",
+            'Enable Webhook': "Enable sending log messages to a Discord webhook.",
+            'Webhook URL': "The URL of the Discord webhook.",
+            'User ID': "Your Discord User ID to be mentioned in the message."
         }
 
         self.gui_loaded = False
@@ -206,6 +212,7 @@ class APGui():
         self.DSS_A_running = False
         self.SWP_A_running = False
         self.FC_A_running = False
+        self.WM_A_running = False
 
         self.cv_view = False
 
@@ -218,6 +225,7 @@ class APGui():
         self.checkboxvar['Automatic logout'].set(self.ed_ap.config['AutomaticLogout'])
         self.checkboxvar['Enable Overlay'].set(self.ed_ap.config['OverlayTextEnable'])
         self.checkboxvar['Enable Voice'].set(self.ed_ap.config['VoiceEnable'])
+        self.checkboxvar['DiscordWebhook'].set(self.ed_ap.config.get('DiscordWebhook', False))
         self.checkboxvar['CUDA OCR'].set(self.ocr_calibration_data.get('use_gpu_ocr', False))
 
         self.radiobuttonvar['dss_button'].set(self.ed_ap.config['DSSButton'])
@@ -268,6 +276,29 @@ class APGui():
         self.entries['buttons']['Start Robigo'].insert(0, str(self.ed_ap.config['HotKey_StartRobigo']))
         self.entries['buttons']['Stop All'].insert(0, str(self.ed_ap.config['HotKey_StopAllAssists']))
 
+        self.entries['discord']['Webhook URL'].delete(0, tk.END)
+        self.entries['discord']['Webhook URL'].insert(0, self.ed_ap.config.get('DiscordWebhookURL', ''))
+        self.entries['discord']['User ID'].delete(0, tk.END)
+        self.entries['discord']['User ID'].insert(0, self.ed_ap.config.get('DiscordUserID', ''))
+
+        # Wing Mining Settings
+        self.entries['wing_mining_station_a'].insert(0, self.ed_ap.config.get('WingMining_StationA', ''))
+        self.entries['wing_mining_station_b'].insert(0, self.ed_ap.config.get('WingMining_StationB', ''))
+        self.entries['wing_mining_fc_a_bertrandite'].insert(0, self.ed_ap.config.get('WingMining_FC_A_Bertrandite', ''))
+        self.entries['wing_mining_fc_a_gold'].insert(0, self.ed_ap.config.get('WingMining_FC_A_Gold', ''))
+        self.entries['wing_mining_fc_a_indite'].insert(0, self.ed_ap.config.get('WingMining_FC_A_Indite', ''))
+        self.entries['wing_mining_fc_a_silver'].insert(0, self.ed_ap.config.get('WingMining_FC_A_Silver', ''))
+        self.entries['wing_mining_fc_b_bertrandite'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Bertrandite', ''))
+        self.entries['wing_mining_fc_b_gold'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Gold', ''))
+        self.entries['wing_mining_fc_b_indite'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Indite', ''))
+        self.entries['wing_mining_fc_b_silver'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Silver', ''))
+        self.checkboxvar['WingMining_SkipDepotCheck'].set(self.ed_ap.config.get('WingMining_SkipDepotCheck', False))
+
+        completed_missions = self.ed_ap.config.get('WingMining_CompletedMissions', 0)
+        self.completed_missions_var.set(str(completed_missions))
+        self.entries['wing_mining_mission_count'].insert(0, str(completed_missions))
+
+
         if self.ed_ap.config['LogDEBUG']:
             self.radiobuttonvar['debug_mode'].set("Debug")
         elif self.ed_ap.config['LogINFO']:
@@ -276,6 +307,8 @@ class APGui():
             self.radiobuttonvar['debug_mode'].set("Error")
 
         self.checkboxvar['Debug Overlay'].set(self.ed_ap.config['DebugOverlay'])
+        if 'DisableLogFile' in self.ed_ap.config:
+            self.checkboxvar['DisableLogFile'].set(self.ed_ap.config['DisableLogFile'])
 
         # global trap for these keys, the 'end' key will stop any current AP action
         # the 'home' key will start the FSD Assist.  May want another to start SC Assist
@@ -350,6 +383,10 @@ class APGui():
             logger.debug("Detected 'fc_stop' callback msg")
             self.checkboxvar['Fleet Carrier Assist'].set(0)
             self.check_cb('Fleet Carrier Assist')
+        elif msg == 'wing_mining_stop':
+            logger.debug("Detected 'wing_mining_stop' callback msg")
+            self.checkboxvar['Wing Mining Assist'].set(0)
+            self.check_cb('Wing Mining Assist')
 
         elif msg == 'stop_all_assists':
             logger.debug("Detected 'stop_all_assists' callback msg")
@@ -382,6 +419,10 @@ class APGui():
             self.update_jumpcount(body)
         elif msg == 'update_ship_cfg':
             self.update_ship_cfg()
+        elif msg == 'update_wing_mining_mission_count':
+            self.completed_missions_var.set(str(body))
+            self.entries['wing_mining_mission_count'].delete(0, tk.END)
+            self.entries['wing_mining_mission_count'].insert(0, str(body))
 
     def update_ship_cfg(self):
         # load up the display with what we read from ED_AP for the current ship
@@ -534,6 +575,21 @@ class APGui():
         self.ed_ap.vce.say("Fleet Carrier Assist Off")
         self.update_statusline("Idle")
 
+    def start_wing_mining(self):
+        logger.debug("Entered: start_wing_mining")
+        self.ed_ap.set_wing_mining_assist(True)
+        self.WM_A_running = True
+        self.log_msg("Wing Mining Assist start")
+        self.ed_ap.vce.say("Wing Mining Assist On")
+
+    def stop_wing_mining(self):
+        logger.debug("Entered: stop_wing_mining")
+        self.ed_ap.set_wing_mining_assist(False)
+        self.WM_A_running = False
+        self.log_msg("Wing Mining Assist stop")
+        self.ed_ap.vce.say("Wing Mining Assist Off")
+        self.update_statusline("Idle")
+
     def about(self):
         webbrowser.open_new("https://github.com/SumZer0-git/EDAPGui")
 
@@ -569,6 +625,9 @@ class APGui():
             self.msgList.insert(tk.END, message)
             self.msgList.yview(tk.END)
             logger.info(msg)
+
+            if self.ed_ap.discord_bot:
+                self.ed_ap.discord_bot.send_message(msg)
 
     def set_statusbar(self, txt):
         self.statusbar.configure(text=txt)
@@ -653,6 +712,25 @@ class APGui():
             self.ed_ap.config['VoiceEnable'] = self.checkboxvar['Enable Voice'].get()
             self.ed_ap.config['TCEDestinationFilepath'] = str(self.TCE_Destination_Filepath.get())
             self.ed_ap.config['DebugOverlay'] = self.checkboxvar['Debug Overlay'].get()
+
+            self.ed_ap.config['DiscordWebhook'] = self.checkboxvar['DiscordWebhook'].get()
+            self.ed_ap.config['DiscordWebhookURL'] = self.entries['discord']['Webhook URL'].get()
+            self.ed_ap.config['DiscordUserID'] = self.entries['discord']['User ID'].get()
+
+            # Wing Mining Settings
+            self.ed_ap.config['WingMining_StationA'] = self.entries['wing_mining_station_a'].get()
+            self.ed_ap.config['WingMining_StationB'] = self.entries['wing_mining_station_b'].get()
+            self.ed_ap.config['WingMining_FC_A_Bertrandite'] = self.entries['wing_mining_fc_a_bertrandite'].get()
+            self.ed_ap.config['WingMining_FC_A_Gold'] = self.entries['wing_mining_fc_a_gold'].get()
+            self.ed_ap.config['WingMining_FC_A_Indite'] = self.entries['wing_mining_fc_a_indite'].get()
+            self.ed_ap.config['WingMining_FC_A_Silver'] = self.entries['wing_mining_fc_a_silver'].get()
+            self.ed_ap.config['WingMining_FC_B_Bertrandite'] = self.entries['wing_mining_fc_b_bertrandite'].get()
+            self.ed_ap.config['WingMining_FC_B_Gold'] = self.entries['wing_mining_fc_b_gold'].get()
+            self.ed_ap.config['WingMining_FC_B_Indite'] = self.entries['wing_mining_fc_b_indite'].get()
+            self.ed_ap.config['WingMining_FC_B_Silver'] = self.entries['wing_mining_fc_b_silver'].get()
+            self.ed_ap.config['WingMining_CompletedMissions'] = int(self.entries['wing_mining_mission_count'].get())
+            self.ed_ap.config['WingMining_SkipDepotCheck'] = self.checkboxvar['WingMining_SkipDepotCheck'].get()
+
         except:
             messagebox.showinfo("Exception", "Invalid float entered")
 
@@ -677,6 +755,26 @@ class APGui():
                 self.lab_ck['AFK Combat Assist'].config(state='active')
                 self.lab_ck['Waypoint Assist'].config(state='active')
                 self.lab_ck['Robigo Assist'].config(state='active')
+                self.lab_ck['Fleet Carrier Assist'].config(state='active')
+
+        if field == 'Wing Mining Assist':
+            if self.checkboxvar['Wing Mining Assist'].get() == 1 and self.WM_A_running == False:
+                self.lab_ck['FSD Route Assist'].config(state='disabled')
+                self.lab_ck['Supercruise Assist'].config(state='disabled')
+                self.lab_ck['AFK Combat Assist'].config(state='disabled')
+                self.lab_ck['Waypoint Assist'].config(state='disabled')
+                self.lab_ck['Robigo Assist'].config(state='disabled')
+                self.lab_ck['DSS Assist'].config(state='disabled')
+                self.lab_ck['Fleet Carrier Assist'].config(state='disabled')
+                self.start_wing_mining()
+            elif self.checkboxvar['Wing Mining Assist'].get() == 0 and self.WM_A_running == True:
+                self.stop_wing_mining()
+                self.lab_ck['FSD Route Assist'].config(state='active')
+                self.lab_ck['Supercruise Assist'].config(state='active')
+                self.lab_ck['AFK Combat Assist'].config(state='active')
+                self.lab_ck['Waypoint Assist'].config(state='active')
+                self.lab_ck['Robigo Assist'].config(state='active')
+                self.lab_ck['DSS Assist'].config(state='active')
                 self.lab_ck['Fleet Carrier Assist'].config(state='active')
 
         if field == 'Fleet Carrier Assist':
@@ -857,8 +955,18 @@ class APGui():
             else:
                 self.ed_ap.debug_overlay = False
 
+        if field == 'DisableLogFile':
+            self.ed_ap.set_log_file_disabled(self.checkboxvar['DisableLogFile'].get())
+
         if field == 'AutoDockBoost':
             self.ed_ap.autodock_boost = self.checkboxvar['AutoDockBoost'].get()
+
+        if field == 'DiscordWebhook':
+            if self.checkboxvar['DiscordWebhook'].get():
+                from DiscordBot import DiscordBot
+                self.ed_ap.discord_bot = DiscordBot(self.ed_ap.config.get('DiscordWebhookURL'), self.ed_ap.config.get('DiscordUserID'))
+            else:
+                self.ed_ap.discord_bot = None
 
         if field == 'CUDA OCR':
             self.ocr_calibration_data['use_gpu_ocr'] = self.checkboxvar['CUDA OCR'].get()
@@ -1227,9 +1335,96 @@ class APGui():
             self.log_msg("All OCR calibrations have been reset to default.")
             messagebox.showinfo("Reset Complete", "All calibrations have been reset to default. Please restart the application for all changes to take effect.")
 
+    def create_wing_mining_tab(self, tab):
+        tab.columnconfigure(0, weight=1)
+
+        # Wing Mining settings block
+        blk_wing_mining = ttk.LabelFrame(tab, text="Wing Mining Settings", padding=(10, 5))
+        blk_wing_mining.grid(row=0, column=0, padx=10, pady=5, sticky=(tk.N, tk.S, tk.E, tk.W))
+        blk_wing_mining.columnconfigure(1, weight=1)
+
+        # Station A
+        ttk.Label(blk_wing_mining, text="Station A:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_station_a'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_station_a'].grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        ttk.Label(blk_wing_mining, text="Bertrandite FC:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_fc_a_bertrandite'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_fc_a_bertrandite'].grid(row=1, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        ttk.Label(blk_wing_mining, text="Gold FC:").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_fc_a_gold'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_fc_a_gold'].grid(row=2, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        ttk.Label(blk_wing_mining, text="Indite FC:").grid(row=3, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_fc_a_indite'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_fc_a_indite'].grid(row=3, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        ttk.Label(blk_wing_mining, text="Silver FC:").grid(row=4, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_fc_a_silver'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_fc_a_silver'].grid(row=4, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        # Station B
+        ttk.Label(blk_wing_mining, text="Station B:").grid(row=5, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_station_b'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_station_b'].grid(row=5, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        ttk.Label(blk_wing_mining, text="Bertrandite FC:").grid(row=6, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_fc_b_bertrandite'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_fc_b_bertrandite'].grid(row=6, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        ttk.Label(blk_wing_mining, text="Gold FC:").grid(row=7, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_fc_b_gold'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_fc_b_gold'].grid(row=7, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        ttk.Label(blk_wing_mining, text="Indite FC:").grid(row=8, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_fc_b_indite'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_fc_b_indite'].grid(row=8, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        ttk.Label(blk_wing_mining, text="Silver FC:").grid(row=9, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_fc_b_silver'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_fc_b_silver'].grid(row=9, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        # Separator
+        ttk.Separator(blk_wing_mining, orient='horizontal').grid(row=10, column=0, columnspan=2, sticky='ew', pady=10)
+
+        # Skip Depot Checkbox
+        self.checkboxvar['WingMining_SkipDepotCheck'] = tk.BooleanVar()
+        cb_skip_depot = ttk.Checkbutton(blk_wing_mining, text='Skip Mission Depot Check', variable=self.checkboxvar['WingMining_SkipDepotCheck'])
+        cb_skip_depot.grid(row=11, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+
+        # Mission Counter
+        blk_mission_counter = ttk.LabelFrame(tab, text="Mission Counter", padding=(10, 5))
+        blk_mission_counter.grid(row=1, column=0, padx=10, pady=5, sticky=(tk.N, tk.S, tk.E, tk.W))
+        blk_mission_counter.columnconfigure(1, weight=1)
+
+        ttk.Label(blk_mission_counter, text="Completed Missions:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.completed_missions_var = tk.StringVar()
+        self.completed_missions_var.set("0")
+        ttk.Label(blk_mission_counter, textvariable=self.completed_missions_var).grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(blk_mission_counter, text="Set Mission Count:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_mission_count'] = ttk.Entry(blk_mission_counter, width=10)
+        self.entries['wing_mining_mission_count'].grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+
+        btn_reset_counter = ttk.Button(blk_mission_counter, text="Reset Counter", command=self.reset_mission_counter)
+        btn_reset_counter.grid(row=1, column=2, padx=5, pady=5, sticky=tk.W)
+
+        # Save Button
+        btn_save = ttk.Button(tab, text='Save All Settings', command=self.save_settings, style="Accent.TButton")
+        btn_save.grid(row=2, column=0, padx=10, pady=10, sticky=(tk.N, tk.E, tk.W, tk.S))
+
+    def reset_mission_counter(self):
+        self.completed_missions_var.set("0")
+        self.entries['wing_mining_mission_count'].delete(0, tk.END)
+        self.entries['wing_mining_mission_count'].insert(0, "0")
+        self.ed_ap.config['WingMining_CompletedMissions'] = 0
+        self.ed_ap.update_config()
+        self.log_msg("Wing Mining mission counter reset.")
+
     def gui_gen(self, win):
 
-        modes_check_fields = ('FSD Route Assist', 'Supercruise Assist', 'Waypoint Assist', 'Robigo Assist', 'AFK Combat Assist', 'DSS Assist', 'Fleet Carrier Assist')
+        modes_check_fields = ('FSD Route Assist', 'Supercruise Assist', 'Waypoint Assist', 'Robigo Assist', 'AFK Combat Assist', 'DSS Assist', 'Fleet Carrier Assist', 'Wing Mining Assist')
         ship_entry_fields = ('RollRate', 'PitchRate', 'YawRate')
         autopilot_entry_fields = ('Sun Bright Threshold', 'Nav Align Tries', 'Jump Tries', 'Docking Retries', 'Wait For Autodock')
         buttons_entry_fields = ('Start FSD', 'Start SC', 'Start Robigo', 'Stop All')
@@ -1254,6 +1449,10 @@ class APGui():
         nb.add(page4, text="Waypoint Editor")
         self.waypoint_editor_tab = WaypointEditorTab(page4, self.ed_ap.waypoint)
         self.waypoint_editor_tab.frame.pack(fill="both", expand=True)
+
+        page5 = ttk.Frame(nb)
+        nb.add(page5, text="Wing Mining")
+        self.create_wing_mining_tab(page5)
 
 
         # main options block
@@ -1395,6 +1594,15 @@ class APGui():
         cb_enable = ttk.Checkbutton(blk_voice, text='Enable', variable=self.checkboxvar['ELW Scanner'], command=(lambda field='ELW Scanner': self.check_cb(field)))
         cb_enable.grid(row=0, column=0, columnspan=2, sticky=(tk.W))
 
+        # discord settings block
+        blk_discord = ttk.LabelFrame(blk_settings, text="DISCORD", padding=(10, 5))
+        blk_discord.grid(row=2, column=2, padx=2, pady=2, sticky=(tk.N, tk.S, tk.E, tk.W))
+        self.checkboxvar['DiscordWebhook'] = tk.BooleanVar()
+        cb_enable_discord = ttk.Checkbutton(blk_discord, text='Enable Webhook', variable=self.checkboxvar['DiscordWebhook'], command=(lambda field='DiscordWebhook': self.check_cb(field)))
+        cb_enable_discord.grid(row=0, column=0, columnspan=2, sticky=(tk.W))
+        self.entries['discord'] = self.makeform(blk_discord, FORM_TYPE_ENTRY, ('Webhook URL', 'User ID'), 1)
+
+
         # settings button block
         blk_settings_buttons = ttk.Frame(page1)
         blk_settings_buttons.grid(row=3, column=0, padx=10, pady=5, sticky=(tk.N, tk.S, tk.E, tk.W))
@@ -1444,6 +1652,9 @@ class APGui():
         rb_debug_error.grid(row=2, column=1, columnspan=2, sticky=(tk.W))
         btn_open_logfile = ttk.Button(blk_debug_settings, text='Open Log File', command=self.open_logfile)
         btn_open_logfile.grid(row=3, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
+        self.checkboxvar['DisableLogFile'] = tk.BooleanVar()
+        cb_disable_log = ttk.Checkbutton(blk_debug_settings, text='Disable Log File', variable=self.checkboxvar['DisableLogFile'], command=(lambda field='DisableLogFile': self.check_cb(field)))
+        cb_disable_log.grid(row=4, column=0, columnspan=2, sticky=(tk.W))
 
         # debug settings block
         blk_single_waypoint_asst = ttk.LabelFrame(page2, text="Single Waypoint Assist", padding=(10, 5))
