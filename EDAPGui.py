@@ -35,6 +35,7 @@ from EDJournal import *
 from ED_AP import *
 from EDAPWaypointEditor import WaypointEditorTab
 from WingMining import *
+from DiscordHandler import DiscordHandler
 
 from EDlogger import logger
 
@@ -79,6 +80,7 @@ class APGui():
         calibration_file = 'configs/ocr_calibration.json'
 
         default_regions = {
+            "Discord.OCR": {"rect": [0.25, 0.25, 0.75, 0.75]},
             "Screen_Regions.sun": {"rect": [0.30, 0.30, 0.70, 0.68]},
             "Screen_Regions.disengage": {"rect": [0.42, 0.65, 0.60, 0.80]},
             "Screen_Regions.sco": {"rect": [0.42, 0.65, 0.60, 0.80]},
@@ -297,6 +299,8 @@ class APGui():
         completed_missions = self.ed_ap.config.get('WingMining_CompletedMissions', 0)
         self.completed_missions_var.set(str(completed_missions))
         self.entries['wing_mining_mission_count'].insert(0, str(completed_missions))
+        self.checkboxvar['Enable Discord OCR'] = tk.BooleanVar(value=self.ed_ap.config.get('EnableDiscordOCR', False))
+        self.check_cb('Enable Discord OCR') # Call once to initialize handler if enabled in config
 
 
         if self.ed_ap.config['LogDEBUG']:
@@ -730,6 +734,7 @@ class APGui():
             self.ed_ap.config['WingMining_FC_B_Silver'] = self.entries['wing_mining_fc_b_silver'].get()
             self.ed_ap.config['WingMining_CompletedMissions'] = int(self.entries['wing_mining_mission_count'].get())
             self.ed_ap.config['WingMining_SkipDepotCheck'] = self.checkboxvar['WingMining_SkipDepotCheck'].get()
+        self.ed_ap.config['EnableDiscordOCR'] = self.checkboxvar['Enable Discord OCR'].get()
 
         except:
             messagebox.showinfo("Exception", "Invalid float entered")
@@ -970,6 +975,19 @@ class APGui():
 
         if field == 'CUDA OCR':
             self.ocr_calibration_data['use_gpu_ocr'] = self.checkboxvar['CUDA OCR'].get()
+
+        if field == 'Enable Discord OCR':
+            use_gpu = self.ocr_calibration_data.get('use_gpu_ocr', False)
+            if self.checkboxvar['Enable Discord OCR'].get():
+                if self.ed_ap.discord_handler is None:
+                    self.ed_ap.discord_handler = DiscordHandler(self.ed_ap, use_gpu)
+                    self.ed_ap.discord_handler.start()
+                    self.log_msg("Discord OCR Started.")
+            else:
+                if self.ed_ap.discord_handler is not None:
+                    self.ed_ap.discord_handler.stop()
+                    self.ed_ap.discord_handler = None
+                    self.log_msg("Discord OCR Stopped.")
 
     def makeform(self, win, ftype, fields, r=0, inc=1, rfrom=0, rto=1000):
         entries = {}
@@ -1392,6 +1410,11 @@ class APGui():
         self.checkboxvar['WingMining_SkipDepotCheck'] = tk.BooleanVar()
         cb_skip_depot = ttk.Checkbutton(blk_wing_mining, text='Skip Mission Depot Check', variable=self.checkboxvar['WingMining_SkipDepotCheck'])
         cb_skip_depot.grid(row=11, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+
+        # Discord OCR Checkbox
+        self.checkboxvar['Enable Discord OCR'] = tk.BooleanVar()
+        cb_discord_ocr = ttk.Checkbutton(blk_wing_mining, text='Enable Discord OCR', variable=self.checkboxvar['Enable Discord OCR'], command=(lambda field='Enable Discord OCR': self.check_cb(field)))
+        cb_discord_ocr.grid(row=12, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
 
         # Mission Counter
         blk_mission_counter = ttk.LabelFrame(tab, text="Mission Counter", padding=(10, 5))

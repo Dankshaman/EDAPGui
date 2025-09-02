@@ -292,6 +292,8 @@ class EDAutopilot:
         if self.config.get('DiscordWebhook', False):
             self.discord_bot = DiscordBot(self.config.get('DiscordWebhookURL'), self.config.get('DiscordUserID'))
 
+        self.discord_handler = None
+
     @property
     def tce_integration(self) -> TceIntegration:
         """ Load TCE Integration class when needed. """

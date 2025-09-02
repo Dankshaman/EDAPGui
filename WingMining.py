@@ -242,14 +242,14 @@ class WingMining:
         self.set_state(STATE_TRAVEL_TO_STATION)
 
     def _find_best_carrier(self, commodity, blacklisted_carriers=[]):
-        try:
-            with open('discord_data.json', 'r') as f:
-                data = json.load(f)
-        except FileNotFoundError:
-            logger.error("discord_data.json not found.")
+        if self.ap.discord_handler and self.ap.discord_handler.running:
+            data = self.ap.discord_handler.get_data()
+        else:
+            logger.error("Discord OCR handler is not running.")
             return None, None
-        except json.JSONDecodeError:
-            logger.error("Error decoding discord_data.json.")
+
+        if not data:
+            logger.error("No data available from Discord OCR handler.")
             return None, None
 
         commodity = commodity.capitalize()
