@@ -288,8 +288,8 @@ class EDKeys:
             repeat) + ',repeat_delay:' + str(repeat_delay) + ',state:' + str(state))
 
         # Set delays for fast or normal speed
-        press_delay = 0.01 if fast else self.key_default_delay
-        release_delay = 0.01 if fast else self.key_repeat_delay
+        press_delay = 0.02 if fast else self.key_default_delay
+        release_delay = 0.02 if fast else self.key_repeat_delay
 
         for i in range(repeat):
             # Focus Elite window if configured.
