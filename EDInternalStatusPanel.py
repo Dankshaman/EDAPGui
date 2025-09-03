@@ -7,7 +7,7 @@ import json
 import os
 from EDAP_data import *
 from EDKeys import EDKeys
-from OCR import OCR
+from ocr_client import OCR
 from Screen import Screen
 from Screen_Regions import size_scale_for_station
 from StatusParser import StatusParser

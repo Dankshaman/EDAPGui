@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from EDAP_data import GuiFocusSystemMap
 from EDlogger import logger
-from OCR import OCR
+from ocr_client import OCR
 from Screen_Regions import reg_scale_for_station
 from StatusParser import StatusParser
 from time import sleep

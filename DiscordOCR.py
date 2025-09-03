@@ -1,7 +1,8 @@
 import json
 import time
 import re
-from DiscordOCRHelper import OCR
+import cv2
+from ocr_client import OCR
 from DiscordScreen import DiscordScreen
 
 # --- DEBUG SETTING ---
@@ -115,7 +116,13 @@ def main():
     while True:
         try:
             image = screen.get_screen_rect_pct(region_data['rect'])
-            ocr_textlist = ocr.image_simple_ocr(image)
+
+            # Pre-process the image to improve OCR accuracy
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            # Binarize the image - use THRESH_BINARY_INV for white text on dark background
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+
+            ocr_textlist = ocr.image_simple_ocr(thresh)
 
             if ocr_textlist:
                 raw_text = "\n".join(ocr_textlist)

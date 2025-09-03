@@ -6,7 +6,7 @@ import os
 import re
 import ED_AP
 from MarketParser import MarketParser
-from OCR import OCR
+from ocr_client import OCR
 from StatusParser import StatusParser
 from time import sleep, time
 from EDlogger import logger

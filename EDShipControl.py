@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from time import sleep
 from EDAP_data import *
-from OCR import OCR
+from ocr_client import OCR
 from StatusParser import StatusParser
 
 
