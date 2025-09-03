@@ -35,6 +35,7 @@ class WingMining:
         self.mission_turned_in = False
         self.failed_carriers = []
         self.current_carrier_name = None
+        self.mission_scanner_mode = False
         self._load_state()
 
     def _get_state(self):
@@ -153,6 +154,7 @@ class WingMining:
         self.station_a = self.ap.config.get('WingMining_StationA', '')
         self.station_b = self.ap.config.get('WingMining_StationB', '')
         self.skip_depot_check = self.ap.config.get('WingMining_SkipDepotCheck', False)
+        self.mission_scanner_mode = self.ap.config.get('WingMining_MissionScannerMode', False)
 
     def _get_current_station_name(self):
         return self.station_a if self.current_station_idx == 0 else self.station_b
@@ -181,6 +183,23 @@ class WingMining:
         self.ap.stn_svcs_in_ship.goto_mission_board()
 
         new_missions = self.ap.stn_svcs_in_ship.scan_wing_missions()
+
+        if self.mission_scanner_mode:
+            if new_missions:
+                num_missions = len(new_missions)
+                logger.info(f"Mission Scanner Mode: Found {num_missions} new missions.")
+                self.completed_missions += num_missions
+                self.ap.config['WingMining_CompletedMissions'] = self.completed_missions
+                self.ap.update_config()
+                self.ap.ap_ckb('update_wing_mining_mission_count', self.completed_missions)
+                self.ap.update_ap_status(f"Mission count: {self.completed_missions}. Switching station.")
+            else:
+                logger.info(f"Mission Scanner Mode: No new missions found at {station_name}.")
+
+            self.ap.keys.send("UI_Back", repeat=4)
+            sleep(1)
+            self.set_state(STATE_SWITCH_STATION)
+            return
 
         if new_missions:
             self.mission_queue.extend(new_missions)
