@@ -293,6 +293,7 @@ class APGui():
         self.entries['wing_mining_fc_b_indite'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Indite', ''))
         self.entries['wing_mining_fc_b_silver'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Silver', ''))
         self.checkboxvar['WingMining_SkipDepotCheck'].set(self.ed_ap.config.get('WingMining_SkipDepotCheck', False))
+        self.checkboxvar['WingMining_MissionScannerMode'].set(self.ed_ap.config.get('WingMining_MissionScannerMode', False))
 
         completed_missions = self.ed_ap.config.get('WingMining_CompletedMissions', 0)
         self.completed_missions_var.set(str(completed_missions))
@@ -730,6 +731,7 @@ class APGui():
             self.ed_ap.config['WingMining_FC_B_Silver'] = self.entries['wing_mining_fc_b_silver'].get()
             self.ed_ap.config['WingMining_CompletedMissions'] = int(self.entries['wing_mining_mission_count'].get())
             self.ed_ap.config['WingMining_SkipDepotCheck'] = self.checkboxvar['WingMining_SkipDepotCheck'].get()
+            self.ed_ap.config['WingMining_MissionScannerMode'] = self.checkboxvar['WingMining_MissionScannerMode'].get()
 
         except:
             messagebox.showinfo("Exception", "Invalid float entered")
@@ -1392,6 +1394,11 @@ class APGui():
         self.checkboxvar['WingMining_SkipDepotCheck'] = tk.BooleanVar()
         cb_skip_depot = ttk.Checkbutton(blk_wing_mining, text='Skip Mission Depot Check', variable=self.checkboxvar['WingMining_SkipDepotCheck'])
         cb_skip_depot.grid(row=11, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+
+        # Mission Scanner Mode Checkbox
+        self.checkboxvar['WingMining_MissionScannerMode'] = tk.BooleanVar()
+        cb_mission_scanner_mode = ttk.Checkbutton(blk_wing_mining, text='Mission Scanner Mode', variable=self.checkboxvar['WingMining_MissionScannerMode'])
+        cb_mission_scanner_mode.grid(row=12, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
 
         # Mission Counter
         blk_mission_counter = ttk.LabelFrame(tab, text="Mission Counter", padding=(10, 5))
