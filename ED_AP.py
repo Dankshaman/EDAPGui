@@ -101,6 +101,7 @@ class EDAutopilot:
             "Language": 'en',              # Language (matching ./locales/xx.json file)
             "OCRLanguage": 'en',           # Language for OCR detection (see OCR language doc in \docs)
             "OcrServerUrl": "http://127.0.0.1:8000/ocr", # URL for the OCR server
+            "WingMiningDiscordDataPath": "discord_data.json", # Path to the discord_data.json file for wing mining
             "EnableEDMesg": False,
             "EDMesgActionsPort": 15570,
             "EDMesgEventsPort": 15571,
@@ -158,6 +159,8 @@ class EDAutopilot:
                 cnf['DisableLogFile'] = False
             if 'OcrServerUrl' not in cnf:
                 cnf['OcrServerUrl'] = "http://127.0.0.1:8000/ocr"
+            if 'WingMiningDiscordDataPath' not in cnf:
+                cnf['WingMiningDiscordDataPath'] = "discord_data.json"
             self.config = cnf
             logger.debug("read AP json:"+str(cnf))
         else:

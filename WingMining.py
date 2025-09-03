@@ -261,11 +261,12 @@ class WingMining:
         self.set_state(STATE_TRAVEL_TO_STATION)
 
     def _find_best_carrier(self, commodity, blacklisted_carriers=[]):
+        discord_data_path = self.ap.config.get('WingMiningDiscordDataPath', 'discord_data.json')
         try:
-            with open('discord_data.json', 'r') as f:
+            with open(discord_data_path, 'r') as f:
                 data = json.load(f)
         except FileNotFoundError:
-            logger.error("discord_data.json not found.")
+            logger.error(f"{discord_data_path} not found.")
             return None, None
         except json.JSONDecodeError:
             logger.error("Error decoding discord_data.json.")

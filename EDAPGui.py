@@ -295,6 +295,7 @@ class APGui():
         self.entries['wing_mining_fc_b_gold'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Gold', ''))
         self.entries['wing_mining_fc_b_indite'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Indite', ''))
         self.entries['wing_mining_fc_b_silver'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Silver', ''))
+        self.entries['wing_mining_discord_data_path'].insert(0, self.ed_ap.config.get('WingMiningDiscordDataPath', 'discord_data.json'))
         self.checkboxvar['WingMining_SkipDepotCheck'].set(self.ed_ap.config.get('WingMining_SkipDepotCheck', False))
         self.checkboxvar['WingMining_MissionScannerMode'].set(self.ed_ap.config.get('WingMining_MissionScannerMode', False))
 
@@ -733,6 +734,7 @@ class APGui():
             self.ed_ap.config['WingMining_FC_B_Gold'] = self.entries['wing_mining_fc_b_gold'].get()
             self.ed_ap.config['WingMining_FC_B_Indite'] = self.entries['wing_mining_fc_b_indite'].get()
             self.ed_ap.config['WingMining_FC_B_Silver'] = self.entries['wing_mining_fc_b_silver'].get()
+            self.ed_ap.config['WingMiningDiscordDataPath'] = self.entries['wing_mining_discord_data_path'].get()
             self.ed_ap.config['WingMining_CompletedMissions'] = int(self.entries['wing_mining_mission_count'].get())
             self.ed_ap.config['WingMining_SkipDepotCheck'] = self.checkboxvar['WingMining_SkipDepotCheck'].get()
             self.ed_ap.config['WingMining_MissionScannerMode'] = self.checkboxvar['WingMining_MissionScannerMode'].get()
@@ -1391,8 +1393,12 @@ class APGui():
         self.entries['wing_mining_fc_b_silver'] = ttk.Entry(blk_wing_mining, width=30)
         self.entries['wing_mining_fc_b_silver'].grid(row=9, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
 
+        ttk.Label(blk_wing_mining, text="Discord Data Path:").grid(row=10, column=0, padx=5, pady=5, sticky=tk.W)
+        self.entries['wing_mining_discord_data_path'] = ttk.Entry(blk_wing_mining, width=30)
+        self.entries['wing_mining_discord_data_path'].grid(row=10, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+
         # Separator
-        ttk.Separator(blk_wing_mining, orient='horizontal').grid(row=10, column=0, columnspan=2, sticky='ew', pady=10)
+        ttk.Separator(blk_wing_mining, orient='horizontal').grid(row=11, column=0, columnspan=2, sticky='ew', pady=10)
 
         # Skip Depot Checkbox
         self.checkboxvar['WingMining_SkipDepotCheck'] = tk.BooleanVar()
