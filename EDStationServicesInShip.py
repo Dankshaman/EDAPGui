@@ -691,20 +691,33 @@ class EDStationServicesInShip:
         keys.send('UI_Down')
         sleep(0.5)
 
+        consecutive_failures = 0
         in_list = False
-        for _ in range(100): # Max 100 scrolls
+        for _ in range(100):  # Max 100 scrolls
             image = self.ocr.capture_region_pct(scl_reg_list)
             img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
 
             if self.ap.debug_overlay:
                 abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
-                self.ap.overlay.overlay_floating_text('missions_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
+                self.ap.overlay.overlay_floating_text('missions_list_text', f'{ocr_textlist}', abs_rect[0],
+                                                      abs_rect[1] - 25, (0, 255, 0))
                 self.ap.overlay.overlay_paint()
 
-            if img_selected is None and in_list:
-                # End of list
-                break
+            if img_selected is None:
+                if in_list:
+                    consecutive_failures += 1
+                    if consecutive_failures >= 2:
+                        logger.info("End of mission list (2 consecutive OCR failures).")
+                        break
+            else:
+                consecutive_failures = 0
+
             in_list = True
+
+            if not ocr_textlist:
+                keys.send('UI_Down')
+                sleep(0.2)
+                continue
 
             details_text = " ".join(ocr_textlist)
             logger.info(f"Scanning mission: {details_text}")
@@ -803,20 +816,33 @@ class EDStationServicesInShip:
         self.keys.send('UI_Down')
         sleep(0.5)
 
+        consecutive_failures = 0
         in_list = False
-        for _ in range(100): # Max 100 scrolls
+        for _ in range(100):  # Max 100 scrolls
             image = self.ocr.capture_region_pct(scl_reg_list)
             img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
 
             if self.ap.debug_overlay:
                 abs_rect = self.screen.screen_rect_to_abs(scl_reg_list['rect'])
-                self.ap.overlay.overlay_floating_text('missions_list_text', f'{ocr_textlist}', abs_rect[0], abs_rect[1] - 25, (0, 255, 0))
+                self.ap.overlay.overlay_floating_text('missions_list_text', f'{ocr_textlist}', abs_rect[0],
+                                                      abs_rect[1] - 25, (0, 255, 0))
                 self.ap.overlay.overlay_paint()
 
-            if img_selected is None and in_list:
-                # End of list
-                break
+            if img_selected is None:
+                if in_list:
+                    consecutive_failures += 1
+                    if consecutive_failures >= 2:
+                        logger.info("End of mission list (2 consecutive OCR failures).")
+                        break
+            else:
+                consecutive_failures = 0
+
             in_list = True
+
+            if not ocr_textlist:
+                self.keys.send('UI_Down')
+                sleep(0.2)
+                continue
 
             details_text = " ".join(ocr_textlist)
             logger.info(f"Scanning mission: {details_text}")
@@ -835,12 +861,13 @@ class EDStationServicesInShip:
                         parts = details_text.lower().split("units of")
                         tonnage_str = parts[0].strip().split()[-1]
                         tonnage = self._parse_number_with_ocr_errors(tonnage_str)
-                        
+
                         commodity_candidate = parts[1].strip().split()[0]
 
                         # Fuzzy match commodity
-                        matched_commodity = self.ocr.find_best_match_in_list(list(commodities.keys()), commodity_candidate, threshold=0.7)
-                        
+                        matched_commodity = self.ocr.find_best_match_in_list(list(commodities.keys()),
+                                                                            commodity_candidate, threshold=0.7)
+
                         if matched_commodity:
                             min_ton, max_ton = commodities[matched_commodity]
                             if min_ton <= tonnage <= max_ton:
@@ -852,21 +879,23 @@ class EDStationServicesInShip:
                                     if reward >= min_reward:
                                         self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
                                         logger.info(f"Mission matched, accepting: {details_text}")
-                                        self.keys.send('UI_Select') # Select mission
+                                        self.keys.send('UI_Select')  # Select mission
                                         sleep(1)
-                                        self.keys.send('UI_Select') # Accept mission
+                                        self.keys.send('UI_Select')  # Accept mission
                                         mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
                                         if mission_accepted_event:
                                             mission_id = mission_accepted_event.get('MissionID')
                                             ocr_text = details_text
-                                            accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": reward, "mission_id": mission_id, "ocr_text": ocr_text})
+                                            accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage,
+                                                                    "reward": reward, "mission_id": mission_id,
+                                                                    "ocr_text": ocr_text})
                                         else:
                                             logger.warning("Did not find MissionAccepted event in journal")
                                         sleep(5)
-                                        self.keys.send('UI_Up') # Move up one to make sure we scan the next mission proper.
+                                        self.keys.send('UI_Up')  # Move up one to make sure we scan the next mission proper.
                                         sleep(0.5)
                 except (IndexError, ValueError):
-                    pass # Couldn't parse mission details, try next one
+                    pass  # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')
 
 
@@ -970,15 +999,27 @@ class EDStationServicesInShip:
         self.keys.send('UI_Down')
         sleep(0.5)
 
+        consecutive_failures = 0
         in_list = True
-        for _ in range(100): # Max 100 scrolls
+        for _ in range(100):  # Max 100 scrolls
             image = self.ocr.capture_region_pct(scl_reg_list)
             img_selected, _, ocr_textlist = self.ocr.get_highlighted_item_data(image, min_w, min_h)
 
-            if img_selected is None and in_list:
-                # End of list
-                break
+            if img_selected is None:
+                if in_list:
+                    consecutive_failures += 1
+                    if consecutive_failures >= 2:
+                        logger.info("End of mission list (2 consecutive OCR failures).")
+                        break
+            else:
+                consecutive_failures = 0
+
             in_list = True
+
+            if not ocr_textlist:
+                self.keys.send('UI_Down')
+                sleep(0.2)
+                continue
 
             details_text = " ".join(ocr_textlist)
             logger.info(f"Scanning depot mission: {details_text}")
@@ -997,11 +1038,12 @@ class EDStationServicesInShip:
                         parts = details_text.lower().split("units of")
                         tonnage_str = parts[0].strip().split()[-1]
                         tonnage = self._parse_number_with_ocr_errors(tonnage_str)
-                        
+
                         commodity_candidate = parts[1].strip().split()[0]
 
                         # Fuzzy match commodity
-                        matched_commodity = self.ocr.find_best_match_in_list(list(commodities.keys()), commodity_candidate, threshold=0.7)
+                        matched_commodity = self.ocr.find_best_match_in_list(list(commodities.keys()),
+                                                                             commodity_candidate, threshold=0.7)
 
                         if matched_commodity:
                             min_ton, max_ton = commodities[matched_commodity]
@@ -1012,9 +1054,10 @@ class EDStationServicesInShip:
                                 # For now, let's just add it to the queue without the ID.
                                 # The turn-in logic will have to find it by OCR text.
                                 logger.info(f"Found pending wing mining mission in depot: {details_text}")
-                                pending_missions.append({"commodity": matched_commodity, "tonnage": tonnage, "reward": 0, "mission_id": None, "ocr_text": details_text})
+                                pending_missions.append({"commodity": matched_commodity, "tonnage": tonnage,
+                                                         "reward": 0, "mission_id": None, "ocr_text": details_text})
                 except (IndexError, ValueError):
-                    pass # Couldn't parse mission details, try next one
+                    pass  # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')
 
         self.ap_ckb('log+vce', "Finished scanning mission depot.")

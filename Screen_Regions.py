@@ -98,7 +98,7 @@ class Screen_Regions:
         self.target_thresh = 0.54
         self.target_occluded_thresh = 0.40
         self.sun_threshold = 125
-        self.disengage_thresh = 0.25
+        self.disengage_thresh = 0.20
 
         # array is in HSV order which represents color ranges for filtering
         self.orange_color_range   = [array([0, 130, 123]),  array([25, 235, 220])]

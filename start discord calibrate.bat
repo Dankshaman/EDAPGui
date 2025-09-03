@@ -80,4 +80,4 @@ if not exist "venv\Scripts\python.exe" (
 
 REM Run EDAPGui with venv python
 echo Starting DiscordOCR...
-venv\Scripts\python.exe DiscordOCR.py
+venv\Scripts\python.exe calibrate_discord.py
