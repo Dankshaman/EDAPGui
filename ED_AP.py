@@ -100,6 +100,7 @@ class EDAutopilot:
             "FCDepartureTime": 5.0,        # Extra time to fly away from a Fleet Carrier
             "Language": 'en',              # Language (matching ./locales/xx.json file)
             "OCRLanguage": 'en',           # Language for OCR detection (see OCR language doc in \docs)
+            "OcrServerUrl": "http://127.0.0.1:8000/ocr", # URL for the OCR server
             "EnableEDMesg": False,
             "EDMesgActionsPort": 15570,
             "EDMesgEventsPort": 15571,
@@ -155,6 +156,8 @@ class EDAutopilot:
                 cnf['DebugOverlay'] = False
             if 'DisableLogFile' not in cnf:
                 cnf['DisableLogFile'] = False
+            if 'OcrServerUrl' not in cnf:
+                cnf['OcrServerUrl'] = "http://127.0.0.1:8000/ocr"
             self.config = cnf
             logger.debug("read AP json:"+str(cnf))
         else:
@@ -214,7 +217,7 @@ class EDAutopilot:
         self.scr.scaleX = self.config['TargetScale']
         self.scr.scaleY = self.config['TargetScale']
 
-        self.ocr = OCR(self.scr)
+        self.ocr = OCR(self.scr, ocr_server_url=self.config['OcrServerUrl'])
         self.templ = Image_Templates.Image_Templates(self.scr.scaleX, self.scr.scaleY, self.scr.scaleX)
         self.scrReg = Screen_Regions.Screen_Regions(self.scr, self.templ)
         self.jn = EDJournal(cb)

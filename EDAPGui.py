@@ -281,6 +281,9 @@ class APGui():
         self.entries['discord']['User ID'].delete(0, tk.END)
         self.entries['discord']['User ID'].insert(0, self.ed_ap.config.get('DiscordUserID', ''))
 
+        self.entries['ocr']['OcrServerUrl'].delete(0, tk.END)
+        self.entries['ocr']['OcrServerUrl'].insert(0, self.ed_ap.config.get('OcrServerUrl', 'http://127.0.0.1:8000/ocr'))
+
         # Wing Mining Settings
         self.entries['wing_mining_station_a'].insert(0, self.ed_ap.config.get('WingMining_StationA', ''))
         self.entries['wing_mining_station_b'].insert(0, self.ed_ap.config.get('WingMining_StationB', ''))
@@ -717,6 +720,7 @@ class APGui():
             self.ed_ap.config['DiscordWebhook'] = self.checkboxvar['DiscordWebhook'].get()
             self.ed_ap.config['DiscordWebhookURL'] = self.entries['discord']['Webhook URL'].get()
             self.ed_ap.config['DiscordUserID'] = self.entries['discord']['User ID'].get()
+            self.ed_ap.config['OcrServerUrl'] = self.entries['ocr']['OcrServerUrl'].get()
 
             # Wing Mining Settings
             self.ed_ap.config['WingMining_StationA'] = self.entries['wing_mining_station_a'].get()
@@ -1600,6 +1604,19 @@ class APGui():
         self.checkboxvar['ELW Scanner'] = tk.BooleanVar()
         cb_enable = ttk.Checkbutton(blk_voice, text='Enable', variable=self.checkboxvar['ELW Scanner'], command=(lambda field='ELW Scanner': self.check_cb(field)))
         cb_enable.grid(row=0, column=0, columnspan=2, sticky=(tk.W))
+
+        # ocr settings block
+        blk_ocr = ttk.LabelFrame(blk_settings, text="OCR", padding=(10, 5))
+        blk_ocr.grid(row=1, column=2, padx=2, pady=2, sticky=(tk.N, tk.S, tk.E, tk.W))
+        blk_ocr.columnconfigure(1, weight=1)
+        lbl_ocr_url = ttk.Label(blk_ocr, text="Server URL:")
+        lbl_ocr_url.grid(row=0, column=0, padx=2, pady=2, sticky=tk.W)
+        ent_ocr_url = ttk.Entry(blk_ocr, width=40)
+        ent_ocr_url.grid(row=0, column=1, padx=2, pady=2, sticky=(tk.W, tk.E))
+        ent_ocr_url.bind('<FocusOut>', self.entry_update)
+        if 'ocr' not in self.entries:
+            self.entries['ocr'] = {}
+        self.entries['ocr']['OcrServerUrl'] = ent_ocr_url
 
         # discord settings block
         blk_discord = ttk.LabelFrame(blk_settings, text="DISCORD", padding=(10, 5))

@@ -4,26 +4,33 @@ import logging
 import os
 from pathlib import Path
 
-_filename = 'autopilot.log'
+# Check if file logging is disabled via environment variable
+if os.environ.get('DISABLE_FILE_LOGGING') != '1':
+    _filename = 'autopilot.log'
 
-# Rename existing log file to create new one.
-if os.path.exists(_filename):
-    filename_only = Path(_filename).stem
-    t = os.path.getmtime(_filename)
-    v = datetime.datetime.fromtimestamp(t)
-    x = v.strftime('%Y-%m-%d %H-%M-%S')
-    os.rename(_filename, f"{filename_only} {x}.log")
+    # Rename existing log file to create new one.
+    if os.path.exists(_filename):
+        try:
+            filename_only = Path(_filename).stem
+            t = os.path.getmtime(_filename)
+            v = datetime.datetime.fromtimestamp(t)
+            x = v.strftime('%Y-%m-%d %H-%M-%S')
+            os.rename(_filename, f"{filename_only} {x}.log")
 
-    # remove all but the last 2 log files
-    files = sorted(Path('.').glob(f'{filename_only}*.log'), key=os.path.getmtime, reverse=True)
-    if len(files) > 2:
-        for file_to_delete in files[2:]:
-            os.remove(file_to_delete)
+            # remove all but the last 2 log files
+            files = sorted(Path('.').glob(f'{filename_only}*.log'), key=os.path.getmtime, reverse=True)
+            if len(files) > 2:
+                for file_to_delete in files[2:]:
+                    os.remove(file_to_delete)
+        except PermissionError:
+            # This can happen if another process has the log file open.
+            # In this case, we just log to the existing file.
+            pass
 
-# Define the logging config.
-logging.basicConfig(filename=_filename, level=logging.ERROR,
-                    format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
-                    datefmt='%H:%M:%S')
+    # Define the logging config for file logging.
+    logging.basicConfig(filename=_filename, level=logging.ERROR,
+                        format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
+                        datefmt='%H:%M:%S')
 
 logger = colorlog.getLogger('ed_log')
 
@@ -44,7 +51,3 @@ handler.setFormatter(
 
     ))
 logger.addHandler(handler)
-
-#logger.disabled = True
-#logger.disabled = False
-

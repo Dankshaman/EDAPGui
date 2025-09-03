@@ -24,3 +24,6 @@ scipy
 sv-ttk
 pywinstyles
 tkinter-tooltip
+fastapi
+uvicorn
+python-multipart
