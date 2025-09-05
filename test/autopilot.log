@@ -1,0 +1,8 @@
+04:15:45.788 INFO     No new missions found at SystemA/StationA.
+04:15:45.788 INFO     No current mission, checking depot for pending missions.
+04:15:47.789 INFO     Found 1 pending missions in depot.
+04:15:48.790 INFO     Wing Mining state changing from SCAN_FOR_MISSIONS to PROCESS_QUEUE
+04:15:48.793 INFO     No new missions found at SystemA/StationA.
+04:15:49.793 INFO     Wing Mining state changing from SCAN_FOR_MISSIONS to PROCESS_QUEUE
+04:15:49.796 INFO     Found 1 new missions.
+04:15:50.798 INFO     Wing Mining state changing from SCAN_FOR_MISSIONS to PROCESS_QUEUE

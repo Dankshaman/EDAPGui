@@ -470,18 +470,27 @@ class WingMining:
             matched_prefix = self.ap.ocr.find_fuzzy_pattern_in_text(details_text, mission_name_patterns)
             if matched_prefix:
                 try:
-                    if "units of" in details_text.lower():
-                        parts = details_text.lower().split("units of")
-                        tonnage_str = parts[0].strip().split()[-1]
-                        tonnage = self.ap.stn_svcs_in_ship._parse_number_with_ocr_errors(tonnage_str)
+                    # Normalize the text by removing spaces and making it lowercase
+                    normalized_text = details_text.lower().replace(" ", "")
+                    if "unitsof" in normalized_text:
+                        # Split based on the now-spaceless "unitsof"
+                        parts = normalized_text.split("unitsof")
                         
-                        commodity_candidate = parts[1].strip().split()[0]
-                        
-                        # Fuzzy match commodity
-                        # Using string_similarity directly as we are comparing a candidate word with a known commodity
-                        if self.ap.ocr.string_similarity(commodity_candidate.upper(), target_commodity.upper()) > 0.7 and tonnage == target_tonnage:
-                            logger.info(f"Found matching mission to turn in: {details_text}")
-                            return True
+                        # Extract tonnage from the first part
+                        # We need to find the number in the string before "unitsof"
+                        tonnage_str_match = re.search(r'(\d+)$', parts[0])
+                        if tonnage_str_match:
+                            tonnage_str = tonnage_str_match.group(1)
+                            tonnage = self.ap.stn_svcs_in_ship._parse_number_with_ocr_errors(tonnage_str)
+
+                            # Extract commodity from the second part
+                            commodity_candidate = parts[1].strip().split()[0] if parts[1].strip() else ""
+
+                            # Fuzzy match commodity
+                            if self.ap.ocr.string_similarity(commodity_candidate.upper(), target_commodity.upper()) > 0.7 and tonnage == target_tonnage:
+                                logger.info(f"Found matching mission to turn in: {details_text}")
+                                return True
+
                 except (IndexError, ValueError):
                     pass # Could not parse, move to next
             

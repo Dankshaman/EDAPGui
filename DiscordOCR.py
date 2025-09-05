@@ -67,7 +67,8 @@ def parse_and_format_text(raw_text):
 
         if current_station_key:
             # Two-step parsing for robustness
-            loose_match = re.search(r'(.+?)\s+x\s+([\d,O]+)\s+Tons\s+-\s+(.+)', line)
+            # The regex is relaxed to handle cases where spaces are missing around 'x', 'Tons', and '-'
+            loose_match = re.search(r'(.+?)\s*x\s*([\d,O]+)\s*Tons\s*-\s*(.+)', line)
             if loose_match:
                 candidate_commodity = loose_match.group(1).strip()
                 quantity_part = loose_match.group(2).strip()
