@@ -730,6 +730,7 @@ class EDStationServicesInShip:
             # Check for mission name patterns
             matched_prefix = self.ocr.find_fuzzy_pattern_in_text(details_text, mission_name_patterns)
             if matched_prefix:
+                reward = 0
                 try:
                     # Extract tonnage and commodity from the text
                     # This logic assumes "units of" is a reliable separator
