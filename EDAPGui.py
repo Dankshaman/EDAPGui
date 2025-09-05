@@ -134,9 +134,9 @@ class APGui():
         self.log_msg("OCR calibration data saved.")
         messagebox.showinfo("Saved", "OCR calibration data saved.\nPlease restart the application for changes to take effect.")
 
-    def __init__(self, root):
+    def __init__(self, root, instance_name="VM 1"):
         self.root = root
-        root.title("EDAutopilot " + EDAP_VERSION)
+        root.title(f"EDAutopilot {EDAP_VERSION} ({instance_name})")
         # root.overrideredirect(True)
         # root.geometry("400x550")
         # root.configure(bg="blue")
@@ -192,7 +192,7 @@ class APGui():
 
         self.load_ocr_calibration_data()
         use_gpu = self.ocr_calibration_data.get('use_gpu_ocr', False)
-        self.ed_ap = EDAutopilot(cb=self.callback, use_gpu_ocr=use_gpu)
+        self.ed_ap = EDAutopilot(cb=self.callback, use_gpu_ocr=use_gpu, instance_name=instance_name)
         self.ed_ap.robigo.set_single_loop(self.ed_ap.config['Robigo_Single_Loop'])
 
         self.mouse = MousePoint()
@@ -1767,13 +1767,19 @@ def apply_theme_to_titlebar(root):
         root.wm_attributes("-alpha", 0.99)
         root.wm_attributes("-alpha", 1)
 
+import argparse
+
 def main():
+    parser = argparse.ArgumentParser(description="EDAutopilot GUI")
+    parser.add_argument("--instance", type=str, default="VM 1", help="The instance name to run.")
+    args = parser.parse_args()
+
     #   handle = win32gui.FindWindow(0, "Elite - Dangerous (CLIENT)")
     #   if handle != None:
     #       win32gui.SetForegroundWindow(handle)  # put the wind8ow in foreground
 
     root = tk.Tk()
-    app = APGui(root)
+    app = APGui(root, instance_name=args.instance)
 
     sv_ttk.set_theme("dark")
 

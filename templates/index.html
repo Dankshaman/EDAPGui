@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EDAP Web GUI</title>
+    <style>
+        body { font-family: sans-serif; }
+        #log { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
+        .action-button { margin: 5px; }
+        .instance-status { display: inline-block; margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <h1>EDAP Web GUI</h1>
+
+    <h2>Instances</h2>
+    <div>
+        {% for instance in instances %}
+        <div>
+            <span>{{ instance.name }}</span>
+            <span class="instance-status" id="status-{{ instance.name }}">Idle</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <h2>Instance to Control</h2>
+    <select id="instance-select">
+        {% for instance in instances %}
+        <option value="{{ instance.name }}">{{ instance.name }}</option>
+        {% endfor %}
+    </select>
+
+    <h2>Actions</h2>
+    <div>
+        <button class="action-button" onclick="sendAction('StartFSDAssistAction')">Start FSD Assist</button>
+        <button class="action-button" onclick="sendAction('StartSCAssistAction')">Start SC Assist</button>
+        <button class="action-button" onclick="sendAction('StartWaypointAssistAction')">Start Waypoint Assist</button>
+        <button class="action-button" onclick="sendAction('StartRobigoAssistAction')">Start Robigo Assist</button>
+        <button class="action-button" onclick="sendAction('StartAFKCombatAssistAction')">Start AFK Combat Assist</button>
+        <button class="action-button" onclick="sendAction('StartDSSAssistAction')">Start DSS Assist</button>
+        <button class="action-button" onclick="sendAction('StartFleetCarrierAssistAction')">Start Fleet Carrier Assist</button>
+        <button class="action-button" onclick="sendAction('StopAllAssistsAction')">Stop All Assists</button>
+    </div>
+    <div>
+        <input type="text" id="waypoint-file" placeholder="Waypoint file path">
+        <button class="action-button" onclick="loadWaypointFile()">Load Waypoint File</button>
+    </div>
+
+    <h2>Log</h2>
+    <div id="log"></div>
+
+    <script>
+        const log = document.getElementById('log');
+        const ws = new WebSocket(`ws://${location.host}/ws`);
+        const instanceSelect = document.getElementById('instance-select');
+
+        ws.onmessage = function(event) {
+            const message = document.createElement('div');
+            message.textContent = event.data;
+            log.appendChild(message);
+            log.scrollTop = log.scrollHeight;
+            updateStatus(event.data);
+        };
+
+        function sendAction(actionName, params = {}) {
+            const instanceName = instanceSelect.value;
+            fetch(`/action/${instanceName}/${actionName}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            });
+        }
+
+        function loadWaypointFile() {
+            const waypointFile = document.getElementById('waypoint-file').value;
+            if (waypointFile) {
+                sendAction('LoadWaypointFileAction', { filepath: waypointFile });
+            }
+        }
+
+        function updateStatus(message) {
+            const instanceNameMatch = message.match(/\[(.*?)\]/);
+            if (instanceNameMatch) {
+                const instanceName = instanceNameMatch[1];
+                const statusElement = document.getElementById(`status-${instanceName}`);
+                if (statusElement) {
+                    if (message.includes("Start")) {
+                        statusElement.textContent = "Running";
+                    } else if (message.includes("Stop")) {
+                        statusElement.textContent = "Idle";
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>

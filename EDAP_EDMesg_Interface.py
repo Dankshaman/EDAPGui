@@ -37,6 +37,30 @@ class GalaxyMapTargetSystemByNameAction(EDMesgAction):
     name: str
 
 
+class StartFSDAssistAction(EDMesgAction):
+    pass
+
+
+class StartSCAssistAction(EDMesgAction):
+    pass
+
+
+class StartRobigoAssistAction(EDMesgAction):
+    pass
+
+
+class StartAFKCombatAssistAction(EDMesgAction):
+    pass
+
+
+class StartDSSAssistAction(EDMesgAction):
+    pass
+
+
+class StartFleetCarrierAssistAction(EDMesgAction):
+    pass
+
+
 class GenericAction(EDMesgAction):
     name: str
 
@@ -61,6 +85,12 @@ actions: list[type[EDMesgAction]] = [
     GalaxyMapTargetStationByBookmarkAction,
     GalaxyMapTargetSystemByNameAction,
     GenericAction,
+    StartFSDAssistAction,
+    StartSCAssistAction,
+    StartRobigoAssistAction,
+    StartAFKCombatAssistAction,
+    StartDSSAssistAction,
+    StartFleetCarrierAssistAction,
 ]
 events: list[type[EDMesgEvent]] = [
     EDAPLocationEvent,

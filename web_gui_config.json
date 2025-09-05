@@ -1,0 +1,16 @@
+{
+    "instances": [
+        {
+            "name": "VM 1",
+            "host": "127.0.0.1",
+            "actions_port": 15570,
+            "events_port": 15571
+        },
+        {
+            "name": "VM 2",
+            "host": "127.0.0.1",
+            "actions_port": 15572,
+            "events_port": 15573
+        }
+    ]
+}

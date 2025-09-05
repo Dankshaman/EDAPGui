@@ -10,6 +10,12 @@ from EDAP_EDMesg_Interface import (
     StartWaypointAssistAction,
     StopAllAssistsAction,
     LaunchAction,
+    StartFSDAssistAction,
+    StartSCAssistAction,
+    StartRobigoAssistAction,
+    StartAFKCombatAssistAction,
+    StartDSSAssistAction,
+    StartFleetCarrierAssistAction,
     SystemMapTargetStationByBookmarkAction,
     GalaxyMapTargetStationByBookmarkAction,
     GalaxyMapTargetSystemByNameAction,
@@ -75,9 +81,21 @@ class EDMesgServer:
                         self._launch(self._provider)
                     if isinstance(action, GenericAction):
                         self._generic_action(action.name)
+                    if isinstance(action, StartFSDAssistAction):
+                        self._start_fsd_assist()
+                    if isinstance(action, StartSCAssistAction):
+                        self._start_sc_assist()
+                    if isinstance(action, StartRobigoAssistAction):
+                        self._start_robigo_assist()
+                    if isinstance(action, StartAFKCombatAssistAction):
+                        self._start_afk_combat_assist()
+                    if isinstance(action, StartDSSAssistAction):
+                        self._start_dss_assist()
+                    if isinstance(action, StartFleetCarrierAssistAction):
+                        self._start_fleet_carrier_assist()
 
                 sleep(0.1)
-        except:
+        except Exception:
             print("Shutting down provider.")
         finally:
             self._provider.close()
@@ -146,6 +164,30 @@ class EDMesgServer:
         self.ap_ckb('log', f"Received EDMesg Action: GenericAction '{name}'")
         if name == 'WriteTCEShoppingList':
             self.ap.tce_integration.write_shopping_list()
+
+    def _start_fsd_assist(self):
+        self.ap_ckb('log', "Received EDMesg Action: StartFSDAssistAction")
+        self.ap_ckb('fsd_start')
+
+    def _start_sc_assist(self):
+        self.ap_ckb('log', "Received EDMesg Action: StartSCAssistAction")
+        self.ap_ckb('sc_start')
+
+    def _start_robigo_assist(self):
+        self.ap_ckb('log', "Received EDMesg Action: StartRobigoAssistAction")
+        self.ap_ckb('robigo_start')
+
+    def _start_afk_combat_assist(self):
+        self.ap_ckb('log', "Received EDMesg Action: StartAFKCombatAssistAction")
+        self.ap_ckb('afk_start')
+
+    def _start_dss_assist(self):
+        self.ap_ckb('log', "Received EDMesg Action: StartDSSAssistAction")
+        self.ap_ckb('dss_start')
+
+    def _start_fleet_carrier_assist(self):
+        self.ap_ckb('log', "Received EDMesg Action: StartFleetCarrierAssistAction")
+        self.ap_ckb('fc_start')
 
 def main():
     edmesg_server = EDMesgServer(ed_ap=None, cb=None)

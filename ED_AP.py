@@ -54,9 +54,11 @@ class EDAP_Interrupt(Exception):
     pass
 
 
+import json
+
 class EDAutopilot:
 
-    def __init__(self, cb, use_gpu_ocr=False, doThread=True):
+    def __init__(self, cb, use_gpu_ocr=False, doThread=True, instance_name="VM 1"):
 
         # NOTE!!! When adding a new config value below, add the same after read_config() to set
         # a default value or an error will occur reading the new value!
@@ -242,8 +244,25 @@ class EDAutopilot:
         self.fc_ap = FleetCarrierAutopilot(self)
 
         self.mesg_server = EDMesgServer(self, cb)
-        self.mesg_server.actions_port = self.config['EDMesgActionsPort']
-        self.mesg_server.events_port = self.config['EDMesgEventsPort']
+
+        try:
+            with open("web_gui_config.json", "r") as f:
+                web_config = json.load(f)
+
+            instance_config = next((item for item in web_config["instances"] if item["name"] == instance_name), None)
+
+            if instance_config:
+                self.mesg_server.actions_port = instance_config['actions_port']
+                self.mesg_server.events_port = instance_config['events_port']
+            else:
+                # Fallback to default config if instance not found
+                self.mesg_server.actions_port = self.config['EDMesgActionsPort']
+                self.mesg_server.events_port = self.config['EDMesgEventsPort']
+        except (FileNotFoundError, json.JSONDecodeError):
+            # Fallback to default config if file is missing or invalid
+            self.mesg_server.actions_port = self.config['EDMesgActionsPort']
+            self.mesg_server.events_port = self.config['EDMesgEventsPort']
+
         if self.config['EnableEDMesg']:
             self.mesg_server.start_server()
 
