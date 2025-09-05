@@ -873,27 +873,28 @@ class EDStationServicesInShip:
                             if min_ton <= tonnage <= max_ton:
                                 # Check reward
                                 reward_matches = re.findall(r"([\d,]+) CR", details_text, re.IGNORECASE)
+                                reward = 0
                                 if reward_matches:
                                     possible_rewards = [int(r.replace(",", "")) for r in reward_matches]
                                     reward = max(possible_rewards)
-                                    if reward >= min_reward:
-                                        self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
-                                        logger.info(f"Mission matched, accepting: {details_text}")
-                                        self.keys.send('UI_Select')  # Select mission
-                                        sleep(1)
-                                        self.keys.send('UI_Select')  # Accept mission
-                                        mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
-                                        if mission_accepted_event:
-                                            mission_id = mission_accepted_event.get('MissionID')
-                                            ocr_text = details_text
-                                            accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage,
-                                                                    "reward": reward, "mission_id": mission_id,
-                                                                    "ocr_text": ocr_text})
-                                        else:
-                                            logger.warning("Did not find MissionAccepted event in journal")
-                                        sleep(5)
-                                        self.keys.send('UI_Up')  # Move up one to make sure we scan the next mission proper.
-                                        sleep(0.5)
+
+                                self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
+                                logger.info(f"Mission matched, accepting: {details_text}")
+                                self.keys.send('UI_Select')  # Select mission
+                                sleep(1)
+                                self.keys.send('UI_Select')  # Accept mission
+                                mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
+                                if mission_accepted_event:
+                                    mission_id = mission_accepted_event.get('MissionID')
+                                    ocr_text = details_text
+                                    accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage,
+                                                            "reward": reward, "mission_id": mission_id,
+                                                            "ocr_text": ocr_text})
+                                else:
+                                    logger.warning("Did not find MissionAccepted event in journal")
+                                sleep(5)
+                                self.keys.send('UI_Up')  # Move up one to make sure we scan the next mission proper.
+                                sleep(0.5)
                 except (IndexError, ValueError):
                     pass  # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')
