@@ -2,7 +2,7 @@ import logging
 import cv2
 import os
 
-from ED_AP import EDAutopilot
+# from ED_AP import EDAutopilot
 from Screen_Regions import *
 from Overlay import *
 from Screen import *
@@ -110,31 +110,31 @@ def draw_match_rect(img, pt1, pt2, color, thick):
                  thick)
 
 
-def compass_test():
-    """ Performs a compass test. """
-    ed_ap = EDAutopilot(cb=None)
-    scr = ed_ap.scr
-
-    templ = Image_Templates(scr.scaleX, scr.scaleY, ed_ap.compass_scale)
-    scr_reg = Screen_Regions(scr, templ)
-
-    while True:
-        region_name = 'compass'
-        template = 'compass'
-
-        img_region, (minVal, maxVal, minLoc, maxLoc), match = scr_reg.match_template_in_region(region_name, template)
-        pt = maxLoc
-        c_wid = scr_reg.templates.template['compass']['width']
-        c_hgt = scr_reg.templates.template['compass']['height']
-        draw_match_rect(img_region, pt, (pt[0] + c_wid, pt[1] + c_hgt), (0, 0, 255), 2)
-        cv2.putText(img_region, f'Match: {maxVal:5.2f}', (1, 10), cv2.FONT_HERSHEY_SIMPLEX, 0.35,
-                    (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.imshow(region_name, img_region)
-        cv2.imshow(template + ' match', match)
-
-        key = cv2.waitKey(1)
-        if key == 27:  # ESC
-            break
+# def compass_test():
+#     """ Performs a compass test. """
+#     ed_ap = EDAutopilot(cb=None)
+#     scr = ed_ap.scr
+#
+#     templ = Image_Templates(scr.scaleX, scr.scaleY, ed_ap.compass_scale)
+#     scr_reg = Screen_Regions(scr, templ)
+#
+#     while True:
+#         region_name = 'compass'
+#         template = 'compass'
+#
+#         img_region, (minVal, maxVal, minLoc, maxLoc), match = scr_reg.match_template_in_region(region_name, template)
+#         pt = maxLoc
+#         c_wid = scr_reg.templates.template['compass']['width']
+#         c_hgt = scr_reg.templates.template['compass']['height']
+#         draw_match_rect(img_region, pt, (pt[0] + c_wid, pt[1] + c_hgt), (0, 0, 255), 2)
+#         cv2.putText(img_region, f'Match: {maxVal:5.2f}', (1, 10), cv2.FONT_HERSHEY_SIMPLEX, 0.35,
+#                     (255, 255, 255), 1, cv2.LINE_AA)
+#         cv2.imshow(region_name, img_region)
+#         cv2.imshow(template + ' match', match)
+#
+#         key = cv2.waitKey(1)
+#         if key == 27:  # ESC
+#             break
 
 
 def template_matching_test(region_name, template):
@@ -161,17 +161,17 @@ def template_matching_test(region_name, template):
             break
 
 
-def show_regions(region_names):
-    """ Draw a rectangle indicating the given region on the Elite Dangerous window.
-        :param region_names: An array names of the regions to indicate on screen (i.e. ["compass", "target"])."""
-    ed_ap = EDAutopilot(cb=None)
-    scr = ed_ap.scr
-    ov = ed_ap.overlay
-
-    templ = Image_Templates(scr.scaleX, scr.scaleY, scr.scaleX)
-    scrReg = Screen_Regions(scr, templ)
-
-    overlay_colors = [
+# def show_regions(region_names):
+#     """ Draw a rectangle indicating the given region on the Elite Dangerous window.
+#         :param region_names: An array names of the regions to indicate on screen (i.e. ["compass", "target"])."""
+#     ed_ap = EDAutopilot(cb=None)
+#     scr = ed_ap.scr
+#     ov = ed_ap.overlay
+#
+#     templ = Image_Templates(scr.scaleX, scr.scaleY, scr.scaleX)
+#     scrReg = Screen_Regions(scr, templ)
+#
+#     overlay_colors = [
         (255, 255, 255),
         (255, 0, 0),
         (0, 255, 0),

@@ -10,6 +10,7 @@ from EDAP_EDMesg_Interface import (
     GalaxyMapTargetSystemByNameAction, GalaxyMapTargetStationByBookmarkAction,
     SystemMapTargetStationByBookmarkAction
 )
+import requests
 
 class SearchableCombobox(ttk.Frame):
     def __init__(self, parent, options, on_select_callback):
@@ -166,19 +167,21 @@ class InternalWaypoints:
 
 
 class WaypointEditorTab:
-    def __init__(self, parent, ed_waypoint):
-        self.ed_waypoint = ed_waypoint
+    def __init__(self, parent, server_url):
+        self.server_url = server_url
         self.waypoints = InternalWaypoints()
         self.frame = ttk.Frame(parent)
         self.file_watcher_thread = None
         self.watching_filepath = None
         self.last_modified_time = None
         self.mesg_client = create_edap_client(15570, 15571)
+        self.current_waypoint_filename = None
 
         self.root = self.frame.winfo_toplevel()
 
         # --- Waypoints Tab ---
         self.create_waypoints_tab()
+        self.load_waypoints_from_server()
 
     def create_waypoints_tab(self):
         # Main container for the waypoints tab
@@ -332,10 +335,12 @@ class WaypointEditorTab:
 
     def new_file(self):
         self.waypoints = InternalWaypoints()
-        self.ed_waypoint.waypoints = {}
-        self.ed_waypoint.filename = None
+        self.current_waypoint_filename = None
         self.update_ui()
         self.save_button.config(state="disabled")
+        # We can optionally tell the server to create a new empty waypoint list
+        requests.post(f"{self.server_url}/waypoints/save", json={"waypoints": {}})
+
 
     def open_file(self):
         from tkinter import filedialog
@@ -345,12 +350,30 @@ class WaypointEditorTab:
             initialdir="./waypoints"
         )
         if filepath:
-            self.load_waypoint_file(filepath)
-            self.save_button.config(state="normal")
+            try:
+                with open(filepath, 'r') as f:
+                    content = json.load(f)
+
+                response = requests.post(f"{self.server_url}/waypoints/load", json={"filename": filepath, "content": content})
+                response.raise_for_status()
+
+                if response.json().get("success"):
+                    self.current_waypoint_filename = filepath
+                    self.load_waypoints_from_server()
+                    self.save_button.config(state="normal")
+                else:
+                    messagebox.showerror("Error", f"Server failed to load waypoint file: {response.json().get('message', 'Unknown error')}")
+            except FileNotFoundError:
+                messagebox.showerror("Error", f"File not found: {filepath}")
+            except json.JSONDecodeError:
+                messagebox.showerror("Error", f"Invalid JSON in file: {filepath}")
+            except requests.exceptions.RequestException as e:
+                messagebox.showerror("Error", f"Failed to communicate with server: {e}")
+
 
     def save_file(self):
-        if self.ed_waypoint.filename:
-            self.save_waypoint_file(self.ed_waypoint.filename)
+        if self.current_waypoint_filename:
+            self.save_waypoint_file(self.current_waypoint_filename)
 
     def save_as_file(self):
         from tkinter import filedialog
@@ -387,50 +410,27 @@ class WaypointEditorTab:
         except Exception as e:
             messagebox.showerror("Import Error", f"Failed to import CSV file: {e}")
 
-    def load_waypoint_file(self, filepath):
+    def load_waypoints_from_server(self):
         try:
-            if self.ed_waypoint.load_waypoint_file(filepath):
-                self.populate_internal_waypoints()
-                self.update_ui()
-                self.start_file_watcher(filepath)
-        except json.JSONDecodeError:
-            messagebox.showerror("Error", f"Invalid JSON file: {filepath}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load waypoint file: {e}")
+            response = requests.get(f"{self.server_url}/waypoints")
+            response.raise_for_status()
+            raw_waypoints = response.json().get("waypoints", {})
+            self.populate_internal_waypoints(raw_waypoints)
+            self.update_ui()
+            # File watcher can be re-enabled if needed, but for now, we rely on the GUI to be the source of truth
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", f"Failed to load waypoints from server: {e}")
 
     def save_waypoint_file(self, filepath):
-        waypoints_to_save = {}
+        raw_waypoints = self.convert_to_raw_waypoints()
+        try:
+            requests.post(f"{self.server_url}/waypoints/save", json={"waypoints": raw_waypoints})
+            self.current_waypoint_filename = filepath
+            # Inform the server to reload the file if it's not watching for changes
+            self.mesg_client.publish(LoadWaypointFileAction(filepath=filepath))
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", f"Failed to save waypoints to server: {e}")
 
-        # Add or preserve GlobalShoppingList at the top
-        if 'GlobalShoppingList' in self.ed_waypoint.waypoints:
-            waypoints_to_save['GlobalShoppingList'] = self.ed_waypoint.waypoints['GlobalShoppingList']
-        else:
-            # Add default GlobalShoppingList for new files
-            waypoints_to_save['GlobalShoppingList'] = {
-                "SystemName": "",
-                "StationName": "",
-                "GalaxyBookmarkType": "",
-                "GalaxyBookmarkNumber": 0,
-                "SystemBookmarkType": "",
-                "SystemBookmarkNumber": 0,
-                "SellCommodities": {},
-                "BuyCommodities": {},
-                "Comment": None,
-                "UpdateCommodityCount": True,
-                "FleetCarrierTransfer": False,
-                "Skip": True,
-                "Completed": False
-            }
-
-        # Add the rest of the waypoints
-        other_waypoints = self.convert_to_raw_waypoints()
-        if 'GlobalShoppingList' in other_waypoints:
-            del other_waypoints['GlobalShoppingList']
-        waypoints_to_save.update(other_waypoints)
-
-        self.ed_waypoint.write_waypoints(waypoints_to_save, filepath)
-        self.ed_waypoint.filename = filepath
-        self.mesg_client.publish(LoadWaypointFileAction(filepath=filepath))
 
     def start_file_watcher(self, filepath):
         if self.file_watcher_thread and self.file_watcher_thread.is_alive():
@@ -459,9 +459,8 @@ class WaypointEditorTab:
 
             time.sleep(1) # Poll every second
 
-    def populate_internal_waypoints(self):
+    def populate_internal_waypoints(self, raw_waypoints):
         self.waypoints = InternalWaypoints()
-        raw_waypoints = self.ed_waypoint.waypoints
 
         for key, value in raw_waypoints.items():
             if key == "GlobalShoppingList":
@@ -745,35 +744,53 @@ class WaypointEditorTab:
             treeview.insert('', 'end', values=(item.name.get(), item.quantity.get()))
 
     def add_waypoint(self):
-        new_waypoint = InternalWaypoint(system_name="New System")
-        self.waypoints.waypoints.append(new_waypoint)
-        self.update_waypoints_list()
+        new_waypoint_name = f"Waypoint {len(self.waypoints.waypoints) + 1}"
+        new_waypoint_data = {
+            new_waypoint_name: {
+                "SystemName": "New System", "StationName": "", "GalaxyBookmarkType": "", "GalaxyBookmarkNumber": 0,
+                "SystemBookmarkType": "", "SystemBookmarkNumber": 0, "SellCommodities": {}, "BuyCommodities": {},
+                "UpdateCommodityCount": True, "FleetCarrierTransfer": False, "Skip": False, "Completed": False,
+                "Comment": "", "ScanMissions": False
+            }
+        }
+        try:
+            requests.post(f"{self.server_url}/waypoints/add", json={"waypoint": new_waypoint_data})
+            self.load_waypoints_from_server()
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror("Error", f"Failed to add waypoint: {e}")
 
     def delete_waypoint(self):
         selected_item = self.waypoints_tree.selection()
         if selected_item:
-            for item in selected_item:
-                index = self.waypoints_tree.index(item)
-                del self.waypoints.waypoints[index]
-            self.update_waypoints_list()
+            index = self.waypoints_tree.index(selected_item[0])
+            key_to_delete = self.waypoints.waypoints[index].name.get()
+            try:
+                requests.post(f"{self.server_url}/waypoints/delete", json={"key": key_to_delete})
+                self.load_waypoints_from_server()
+            except requests.exceptions.RequestException as e:
+                messagebox.showerror("Error", f"Failed to delete waypoint: {e}")
 
     def move_waypoint_up(self):
         selected_item = self.waypoints_tree.selection()
         if selected_item:
-            for item in selected_item:
-                index = self.waypoints_tree.index(item)
-                if index > 0:
-                    self.waypoints.waypoints.insert(index - 1, self.waypoints.waypoints.pop(index))
-            self.update_waypoints_list()
+            index = self.waypoints_tree.index(selected_item[0])
+            key_to_move = self.waypoints.waypoints[index].name.get()
+            try:
+                requests.post(f"{self.server_url}/waypoints/move", json={"key": key_to_move, "direction": "up"})
+                self.load_waypoints_from_server()
+            except requests.exceptions.RequestException as e:
+                messagebox.showerror("Error", f"Failed to move waypoint: {e}")
 
     def move_waypoint_down(self):
         selected_item = self.waypoints_tree.selection()
         if selected_item:
-            for item in reversed(selected_item):
-                index = self.waypoints_tree.index(item)
-                if index < len(self.waypoints.waypoints) - 1:
-                    self.waypoints.waypoints.insert(index + 1, self.waypoints.waypoints.pop(index))
-            self.update_waypoints_list()
+            index = self.waypoints_tree.index(selected_item[0])
+            key_to_move = self.waypoints.waypoints[index].name.get()
+            try:
+                requests.post(f"{self.server_url}/waypoints/move", json={"key": key_to_move, "direction": "down"})
+                self.load_waypoints_from_server()
+            except requests.exceptions.RequestException as e:
+                messagebox.showerror("Error", f"Failed to move waypoint: {e}")
 
     def get_selected_waypoint(self):
         selected_item = self.waypoints_tree.selection()
