@@ -1,7 +1,8 @@
 {
-    "state": "TRAVEL_TO_STATION",
+    "state": "RESCAN_STATION",
     "mission_queue": [],
     "current_mission": null,
-    "current_station_idx": 1,
-    "mission_turned_in": false
+    "current_station_idx": 0,
+    "mission_turned_in": true,
+    "current_mission_original_tonnage": 824
 }

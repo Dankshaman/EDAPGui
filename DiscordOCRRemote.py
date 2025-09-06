@@ -71,7 +71,8 @@ def parse_and_format_text(raw_text):
 
         if current_station_key:
             # Two-step parsing for robustness
-            loose_match = re.search(r'(.+?)\s+x\s+([\d,O]+)\s+Tons\s+-\s+(.+)', line)
+            # The regex is relaxed to handle cases where spaces are missing around 'x', 'Tons', and '-'
+            loose_match = re.search(r'(.+?)\s*x\s*([\d,O]+)\s*Tons\s*-\s*(.+)', line)
             if loose_match:
                 candidate_commodity = loose_match.group(1).strip()
                 quantity_part = loose_match.group(2).strip()
@@ -83,7 +84,7 @@ def parse_and_format_text(raw_text):
                 if processed_commodity in commodity_map:
                     correct_commodity_name = commodity_map[processed_commodity]
                     
-                    carrier_match = re.search(r'(.+?)\s+\(([A-Za-z0-9-]{7})\)', carrier_part)
+                    carrier_match = re.search(r'(.+?)\s*\(([A-Za-z0-9-]{7})\)', carrier_part)
                     if carrier_match:
                         carrier_name_part = carrier_match.group(1).strip()
                         carrier_id = carrier_match.group(2).strip()
@@ -134,15 +135,16 @@ def main():
                     json.dump(formatted_data, f, indent=4)
 
                 # Copy the file to the network share
+
                 try:
-                    shutil.copy("discord_data.json", r"\\172.28.112.1\discord")
+                    shutil.copy("discord_data.json", r"\\69.69.69.3\VM2\discord")
                 except (FileNotFoundError, PermissionError, OSError) as e:
                     print(f"Error copying file to network share: {e}")
 
         except Exception as e:
             print(f"An error occurred in the main loop: {e}")
 
-        time.sleep(60)
+        time.sleep(250)
 
 
 if __name__ == "__main__":

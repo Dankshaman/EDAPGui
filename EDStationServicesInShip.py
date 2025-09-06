@@ -619,14 +619,9 @@ class EDStationServicesInShip:
         # Scale the regions based on the target resolution.
         scl_mission_board = reg_scale_for_station(self.reg['mission_board_header'], self.screen.screen_width, self.screen.screen_height)
 
-        # Wait for screen to appear
-        if not self.ocr.wait_for_text(self.ap, [self.locale["STN_SVCS_MISSION_BOARD_HEADER"]], scl_mission_board):
-            logger.error("Could not verify that we are on the mission board.")
-            self.ap.keys.send("UI_Back", repeat=4)
-            return False
 
         # Wait for the "ALL" tab to be highlighted
-        scl_reg_list = reg_scale_for_station(self.reg['missions_list'], self.screen.screen_width, self.screen.screen_height)
+        scl_reg_list = reg_scale_for_station(self.reg['mission_loaded'], self.screen.screen_width, self.screen.screen_height)
         min_w, min_h = size_scale_for_station(self.mission_item_size['width'], self.mission_item_size['height'], self.screen.screen_width, self.screen.screen_height)
         if not self.ocr.wait_for_highlighted_text(self.ap, "ALL", scl_reg_list, min_w, min_h):
             logger.error("Could not verify that the 'ALL' tab is selected on the mission board.")
@@ -730,6 +725,7 @@ class EDStationServicesInShip:
             # Check for mission name patterns
             matched_prefix = self.ocr.find_fuzzy_pattern_in_text(details_text, mission_name_patterns)
             if matched_prefix:
+                reward = 0
                 try:
                     # Extract tonnage and commodity from the text
                     # This logic assumes "units of" is a reliable separator
@@ -873,27 +869,28 @@ class EDStationServicesInShip:
                             if min_ton <= tonnage <= max_ton:
                                 # Check reward
                                 reward_matches = re.findall(r"([\d,]+) CR", details_text, re.IGNORECASE)
+                                reward = 0
                                 if reward_matches:
                                     possible_rewards = [int(r.replace(",", "")) for r in reward_matches]
                                     reward = max(possible_rewards)
-                                    if reward >= min_reward:
-                                        self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
-                                        logger.info(f"Mission matched, accepting: {details_text}")
-                                        self.keys.send('UI_Select')  # Select mission
-                                        sleep(1)
-                                        self.keys.send('UI_Select')  # Accept mission
-                                        mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
-                                        if mission_accepted_event:
-                                            mission_id = mission_accepted_event.get('MissionID')
-                                            ocr_text = details_text
-                                            accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage,
-                                                                    "reward": reward, "mission_id": mission_id,
-                                                                    "ocr_text": ocr_text})
-                                        else:
-                                            logger.warning("Did not find MissionAccepted event in journal")
-                                        sleep(5)
-                                        self.keys.send('UI_Up')  # Move up one to make sure we scan the next mission proper.
-                                        sleep(0.5)
+
+                                self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
+                                logger.info(f"Mission matched, accepting: {details_text}")
+                                self.keys.send('UI_Select')  # Select mission
+                                sleep(1)
+                                self.keys.send('UI_Select')  # Accept mission
+                                mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
+                                if mission_accepted_event:
+                                    mission_id = mission_accepted_event.get('MissionID')
+                                    ocr_text = details_text
+                                    accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage,
+                                                            "reward": reward, "mission_id": mission_id,
+                                                            "ocr_text": ocr_text})
+                                else:
+                                    logger.warning("Did not find MissionAccepted event in journal")
+                                sleep(5)
+                                self.keys.send('UI_Up')  # Move up one to make sure we scan the next mission proper.
+                                sleep(0.5)
                 except (IndexError, ValueError):
                     pass  # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')

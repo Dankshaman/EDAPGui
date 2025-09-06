@@ -21,7 +21,7 @@ Author: Stumpii (modified by Jules)
 
 
 class OCR:
-    def __init__(self, screen, ocr_server_url: str = "http://127.0.0.1:8000/ocr"):
+    def __init__(self, screen, ocr_server_url: str = "http://69.69.69.1:8000/ocr"):
         self.screen = screen
         self.ocr_server_url = ocr_server_url
         # Class for text similarity metrics
