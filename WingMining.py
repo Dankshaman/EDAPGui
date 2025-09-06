@@ -36,6 +36,7 @@ class WingMining:
         self.failed_carriers = []
         self.current_carrier_name = None
         self.mission_scanner_mode = False
+        self.current_mission_original_tonnage = None
         self._load_state()
 
     def _get_state(self):
@@ -45,6 +46,7 @@ class WingMining:
             "current_mission": self.current_mission,
             "current_station_idx": self.current_station_idx,
             "mission_turned_in": self.mission_turned_in,
+            "current_mission_original_tonnage": self.current_mission_original_tonnage,
         }
 
     def _load_state(self):
@@ -55,6 +57,9 @@ class WingMining:
             self.current_mission = state.get("current_mission", None)
             self.current_station_idx = state.get("current_station_idx", 0)
             self.mission_turned_in = state.get("mission_turned_in", False)
+            self.current_mission_original_tonnage = state.get("current_mission_original_tonnage", None)
+            if self.current_mission and self.current_mission_original_tonnage is None:
+                self.current_mission_original_tonnage = self.current_mission['tonnage']
             logger.info("Wing Mining state restored.")
 
     def start(self):
@@ -226,6 +231,7 @@ class WingMining:
     def _handle_process_queue(self):
         if self.mission_queue:
             self.current_mission = self.mission_queue.pop(0)
+            self.current_mission_original_tonnage = self.current_mission['tonnage']
             self.failed_carriers = [] # Reset blacklist for new mission
             self.set_state(STATE_TRAVEL_TO_FC)
         else:
@@ -437,7 +443,7 @@ class WingMining:
         # We need to match the mission based on its core attributes, not the full OCR text
         # which might include variable reward amounts.
         target_commodity = mission['commodity']
-        target_tonnage = mission['tonnage']
+        target_tonnage = self.current_mission_original_tonnage
 
         mission_name_patterns = [
             "Mine",
