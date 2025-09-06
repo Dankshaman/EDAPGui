@@ -4,9 +4,15 @@ def create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls):
     with ui.row():
         with ui.card().classes('w-1/2'):
             ui.label('MODE').classes('text-h6')
-            with ui.grid(columns=2):
-                for checkbox in assist_checkboxes.values():
-                    checkbox  # This will render the checkbox
+            with ui.row():
+                checkbox_list = list(assist_checkboxes.values())
+                mid_point = (len(checkbox_list) + 1) // 2
+                with ui.column():
+                    for checkbox in checkbox_list[:mid_point]:
+                        checkbox
+                with ui.column():
+                    for checkbox in checkbox_list[mid_point:]:
+                        checkbox
 
         with ui.card().classes('w-1/2'):
             ui.label('SHIP').classes('text-h6')
