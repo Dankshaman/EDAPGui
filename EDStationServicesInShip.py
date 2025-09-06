@@ -730,6 +730,7 @@ class EDStationServicesInShip:
             # Check for mission name patterns
             matched_prefix = self.ocr.find_fuzzy_pattern_in_text(details_text, mission_name_patterns)
             if matched_prefix:
+                reward = 0
                 try:
                     # Normalize the text by removing spaces and making it lowercase
                     normalized_text = details_text.lower().replace(" ", "")
@@ -862,51 +863,45 @@ class EDStationServicesInShip:
             matched_prefix = self.ocr.find_fuzzy_pattern_in_text(details_text, mission_name_patterns)
             if matched_prefix:
                 try:
-                    # Normalize the text by removing spaces and making it lowercase
-                    normalized_text = details_text.lower().replace(" ", "")
-                    if "unitsof" in normalized_text:
-                        # Split based on the now-spaceless "unitsof"
-                        parts = normalized_text.split("unitsof")
+                    # Extract tonnage and commodity from the text
+                    if "units of" in details_text.lower():
+                        parts = details_text.lower().split("units of")
+                        tonnage_str = parts[0].strip().split()[-1]
+                        tonnage = self._parse_number_with_ocr_errors(tonnage_str)
 
-                        # Extract tonnage from the first part
-                        tonnage_str_match = re.search(r'(\d+)$', parts[0])
-                        if tonnage_str_match:
-                            tonnage_str = tonnage_str_match.group(1)
-                            tonnage = self._parse_number_with_ocr_errors(tonnage_str)
+                        commodity_candidate = parts[1].strip().split()[0]
 
-                            # Extract commodity from the second part
-                            commodity_candidate = parts[1].strip().split()[0] if parts[1].strip() else ""
+                        # Fuzzy match commodity
+                        matched_commodity = self.ocr.find_best_match_in_list(list(commodities.keys()),
+                                                                            commodity_candidate, threshold=0.7)
 
-                            # Fuzzy match commodity
-                            matched_commodity = self.ocr.find_best_match_in_list(list(commodities.keys()),
-                                                                                commodity_candidate, threshold=0.7)
+                        if matched_commodity:
+                            min_ton, max_ton = commodities[matched_commodity]
+                            if min_ton <= tonnage <= max_ton:
+                                # Check reward
+                                reward_matches = re.findall(r"([\d,]+) CR", details_text, re.IGNORECASE)
+                                reward = 0
+                                if reward_matches:
+                                    possible_rewards = [int(r.replace(",", "")) for r in reward_matches]
+                                    reward = max(possible_rewards)
 
-                            if matched_commodity:
-                                min_ton, max_ton = commodities[matched_commodity]
-                                if min_ton <= tonnage <= max_ton:
-                                    # Check reward
-                                    reward_matches = re.findall(r"([\d,]+)CR", normalized_text, re.IGNORECASE)
-                                    if reward_matches:
-                                        possible_rewards = [int(r.replace(",", "")) for r in reward_matches]
-                                        reward = max(possible_rewards)
-                                        if reward >= min_reward:
-                                            self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
-                                            logger.info(f"Mission matched, accepting: {details_text}")
-                                            self.keys.send('UI_Select')  # Select mission
-                                            sleep(1)
-                                            self.keys.send('UI_Select')  # Accept mission
-                                            mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
-                                            if mission_accepted_event:
-                                                mission_id = mission_accepted_event.get('MissionID')
-                                                ocr_text = details_text
-                                                accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage,
-                                                                        "reward": reward, "mission_id": mission_id,
-                                                                        "ocr_text": ocr_text})
-                                            else:
-                                                logger.warning("Did not find MissionAccepted event in journal")
-                                            sleep(5)
-                                            self.keys.send('UI_Up')  # Move up one to make sure we scan the next mission proper.
-                                            sleep(0.5)
+                                self.ap_ckb('log+vce', f"Found matching mission: {details_text}")
+                                logger.info(f"Mission matched, accepting: {details_text}")
+                                self.keys.send('UI_Select')  # Select mission
+                                sleep(1)
+                                self.keys.send('UI_Select')  # Accept mission
+                                mission_accepted_event = self.ap.jn.wait_for_event('MissionAccepted')
+                                if mission_accepted_event:
+                                    mission_id = mission_accepted_event.get('MissionID')
+                                    ocr_text = details_text
+                                    accepted_missions.append({"commodity": matched_commodity, "tonnage": tonnage,
+                                                            "reward": reward, "mission_id": mission_id,
+                                                            "ocr_text": ocr_text})
+                                else:
+                                    logger.warning("Did not find MissionAccepted event in journal")
+                                sleep(5)
+                                self.keys.send('UI_Up')  # Move up one to make sure we scan the next mission proper.
+                                sleep(0.5)
                 except (IndexError, ValueError):
                     pass  # Couldn't parse mission details, try next one
             self.keys.send('UI_Down')
