@@ -82,6 +82,7 @@ status_label = ui.label("Status: Idle")
 
 # UI elements that need to be updated by callbacks
 assist_checkboxes = {}
+ship_controls = {}
 
 def callback(msg, body=None):
     """Callback function to handle messages from EDAutopilot."""
@@ -107,6 +108,14 @@ def callback(msg, body=None):
         if 'Fleet Carrier Assist' in assist_checkboxes: assist_checkboxes['Fleet Carrier Assist'].value = False
     elif msg == 'wing_mining_stop':
         if 'Wing Mining Assist' in assist_checkboxes: assist_checkboxes['Wing Mining Assist'].value = False
+    elif msg == 'update_ship_cfg':
+        ship_controls['RollRate'].value = ed_ap.rollrate
+        ship_controls['PitchRate'].value = ed_ap.pitchrate
+        ship_controls['YawRate'].value = ed_ap.yawrate
+        ship_controls['SunPitchUp+Time'].value = ed_ap.sunpitchuptime
+        ship_controls['AutoDockBoost'].value = ed_ap.autodock_boost
+        ship_controls['AutoDockForwardTime'].value = ed_ap.autodock_forward_time
+        ship_controls['AutoDockDelayTime'].value = ed_ap.autodock_delay_time
     else:
         print(f"Unhandled Callback: {msg}, {body}")
 
@@ -126,7 +135,16 @@ def index_page() -> None:
         assist_checkboxes['Fleet Carrier Assist'] = ui.checkbox('Fleet Carrier Assist', on_change=lambda e: ed_ap.set_fc_assist(e.value))
         assist_checkboxes['Wing Mining Assist'] = ui.checkbox('Wing Mining Assist', on_change=lambda e: ed_ap.set_wing_mining_assist(e.value))
 
-        create_main_tab(ed_ap, log_display, assist_checkboxes)
+        # Create ship controls here so they can be accessed by the callback
+        ship_controls['RollRate'] = ui.number('RollRate', value=ed_ap.rollrate, on_change=lambda e: setattr(ed_ap, 'rollrate', e.value))
+        ship_controls['PitchRate'] = ui.number('PitchRate', value=ed_ap.pitchrate, on_change=lambda e: setattr(ed_ap, 'pitchrate', e.value))
+        ship_controls['YawRate'] = ui.number('YawRate', value=ed_ap.yawrate, on_change=lambda e: setattr(ed_ap, 'yawrate', e.value))
+        ship_controls['SunPitchUp+Time'] = ui.number('SunPitchUp+Time', value=ed_ap.sunpitchuptime, on_change=lambda e: setattr(ed_ap, 'sunpitchuptime', e.value))
+        ship_controls['AutoDockBoost'] = ui.checkbox('Auto-Dock Boost', value=ed_ap.autodock_boost, on_change=lambda e: setattr(ed_ap, 'autodock_boost', e.value))
+        ship_controls['AutoDockForwardTime'] = ui.number('Auto-Dock Fwd Time', value=ed_ap.autodock_forward_time, on_change=lambda e: setattr(ed_ap, 'autodock_forward_time', e.value))
+        ship_controls['AutoDockDelayTime'] = ui.number('Auto-Dock Delay', value=ed_ap.autodock_delay_time, on_change=lambda e: setattr(ed_ap, 'autodock_delay_time', e.value))
+
+        create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls)
 
 @ui.page('/settings')
 def settings_page() -> None:

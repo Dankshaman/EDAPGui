@@ -1,6 +1,6 @@
 from nicegui import ui
 
-def create_main_tab(ed_ap, log_display, assist_checkboxes):
+def create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls):
     with ui.row():
         with ui.card().classes('w-1/2'):
             ui.label('MODE').classes('text-h6')
@@ -9,16 +9,16 @@ def create_main_tab(ed_ap, log_display, assist_checkboxes):
 
         with ui.card().classes('w-1/2'):
             ui.label('SHIP').classes('text-h6')
-            ui.number('RollRate', value=ed_ap.rollrate, on_change=lambda e: setattr(ed_ap, 'rollrate', e.value))
-            ui.number('PitchRate', value=ed_ap.pitchrate, on_change=lambda e: setattr(ed_ap, 'pitchrate', e.value))
-            ui.number('YawRate', value=ed_ap.yawrate, on_change=lambda e: setattr(ed_ap, 'yawrate', e.value))
-            ui.number('SunPitchUp+Time', value=ed_ap.sunpitchuptime, on_change=lambda e: setattr(ed_ap, 'sunpitchuptime', e.value))
+            ship_controls['RollRate']
+            ship_controls['PitchRate']
+            ship_controls['YawRate']
+            ship_controls['SunPitchUp+Time']
 
             ui.separator()
 
-            ui.checkbox('Auto-Dock Boost', value=ed_ap.autodock_boost, on_change=lambda e: setattr(ed_ap, 'autodock_boost', e.value))
-            ui.number('Auto-Dock Fwd Time', value=ed_ap.autodock_forward_time, on_change=lambda e: setattr(ed_ap, 'autodock_forward_time', e.value))
-            ui.number('Auto-Dock Delay', value=ed_ap.autodock_delay_time, on_change=lambda e: setattr(ed_ap, 'autodock_delay_time', e.value))
+            ship_controls['AutoDockBoost']
+            ship_controls['AutoDockForwardTime']
+            ship_controls['AutoDockDelayTime']
 
             ui.button('Test Roll Rate', on_click=ed_ap.ship_tst_roll)
             ui.button('Test Pitch Rate', on_click=ed_ap.ship_tst_pitch)
