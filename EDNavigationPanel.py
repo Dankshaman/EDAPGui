@@ -5,6 +5,7 @@ import json
 import os
 from time import sleep
 import cv2
+from typing import TYPE_CHECKING
 
 from EDAP_data import GuiFocusExternalPanel
 from EDKeys import EDKeys
@@ -13,6 +14,9 @@ from ocr_client import OCR
 from Screen import Screen
 from Screen_Regions import size_scale_for_station
 from StatusParser import StatusParser
+
+if TYPE_CHECKING:
+    from EDAPServer import EDAutopilot
 
 """
 File:navPanel.py    
@@ -26,7 +30,7 @@ Author: Stumpii
 
 class EDNavigationPanel:
     """ The Navigation (Left hand) Ship Status Panel. """
-    def __init__(self, ed_ap, screen, keys, cb):
+    def __init__(self, ed_ap: 'EDAutopilot', screen, keys, cb):
         self.ap = ed_ap
         self.ocr = ed_ap.ocr
         self.screen = screen
@@ -383,14 +387,14 @@ def dummy_cb(msg, body=None):
     pass
 
 
-# Usage Example
-if __name__ == "__main__":
-    logger.setLevel(logging.DEBUG)  # Default to log all debug when running this file.
-    from ED_AP import EDAutopilot
-    ap = EDAutopilot(cb=dummy_cb)
-    ap.keys.activate_window = True  # Helps with single steps testing
-
-    from Screen import set_focus_elite_window
-    set_focus_elite_window()
-    nav_pnl = EDNavigationPanel(ap, ap.scr, ap.keys, dummy_cb)
-    nav_pnl.request_docking()
+# # Usage Example
+# if __name__ == "__main__":
+#     logger.setLevel(logging.DEBUG)  # Default to log all debug when running this file.
+#     from ED_AP import EDAutopilot
+#     ap = EDAutopilot(cb=dummy_cb)
+#     ap.keys.activate_window = True  # Helps with single steps testing
+#
+#     from Screen import set_focus_elite_window
+#     set_focus_elite_window()
+#     nav_pnl = EDNavigationPanel(ap, ap.scr, ap.keys, dummy_cb)
+#     nav_pnl.request_docking()

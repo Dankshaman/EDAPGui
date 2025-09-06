@@ -1,5 +1,6 @@
 from __future__ import annotations
 from time import sleep
+from typing import TYPE_CHECKING
 from CargoParser import CargoParser
 from EDAP_data import *
 from EDKeys import EDKeys
@@ -9,6 +10,9 @@ from MarketParser import MarketParser
 from MousePt import MousePoint
 from pathlib import Path
 from EDNavigationPanel import EDNavigationPanel
+
+if TYPE_CHECKING:
+    from EDAPServer import EDAutopilot
 
 """
 File: EDWayPoint.py    
@@ -22,7 +26,7 @@ Author: sumzer0@yahoo.com
 
 
 class EDWayPoint:
-    def __init__(self, ed_ap, is_odyssey=True):
+    def __init__(self, ed_ap: 'EDAutopilot', is_odyssey=True):
         self.ap = ed_ap
         self.is_odyssey = is_odyssey
         self.filename = './waypoints.json'
@@ -203,6 +207,20 @@ class EDWayPoint:
             self.step = 0
         self.write_waypoints(data=None, filename='./waypoints/' + Path(self.filename).name)
         self.log_stats()
+
+    def move_waypoint(self, key: str, direction: str):
+        keys = list(self.waypoints.keys())
+        if key not in keys:
+            return
+
+        index = keys.index(key)
+        if direction == 'up' and index > 0:
+            keys.insert(index - 1, keys.pop(index))
+        elif direction == 'down' and index < len(keys) - 1:
+            keys.insert(index + 1, keys.pop(index))
+
+        self.waypoints = {k: self.waypoints[k] for k in keys}
+        self.write_waypoints(self.waypoints, self.filename)
 
     def log_stats(self):
         calc1 = 1.5 ** self.stats_log['Colonisation']
@@ -688,44 +706,44 @@ class EDWayPoint:
         self.stats_log['Station'] = 0
 
 
-def main():
-    from ED_AP import EDAutopilot
-
-    ed_ap = EDAutopilot(cb=None)
-    wp = EDWayPoint(ed_ap, True)  # False = Horizons
-    wp.step = 0  # start at first waypoint
-    keys = EDKeys(cb=None)
-    keys.activate_window = True
-    wp.ap.stn_svcs_in_ship.select_sell(keys)
-    wp.ap.stn_svcs_in_ship.sell_commodity(keys, "Aluminium", 1, wp.cargo_parser)
-    wp.ap.stn_svcs_in_ship.sell_commodity(keys, "Beryllium", 1, wp.cargo_parser)
-    wp.ap.stn_svcs_in_ship.sell_commodity(keys, "Cobalt", 1, wp.cargo_parser)
-    #wp.ap.stn_svcs_in_ship.buy_commodity(keys, "Titanium", 5, 200)
-
-    # dest = 'Enayex'
-    #print(dest)
-
-    #print("In waypoint_assist, at:"+str(dest))
-
-    # already in doc config, test the trade
-    #wp.execute_trade(keys, dest)
-
-    # Set the Route for the waypoint^#
-    #dest = wp.waypoint_next(ap=None)
-
-    #while dest != "":
-
-    #  print("Doing: "+str(dest))
-    #  print(wp.waypoints[dest])
-
-    #wp.set_station_target(None, dest)
-
-    # Mark this waypoint as complated
-    #wp.mark_waypoint_complete(dest)
-
-    # set target to next waypoint and loop
-    #dest = wp.waypoint_next(ap=None)
-
-
-if __name__ == "__main__":
-    main()
+# def main():
+#     from ED_AP import EDAutopilot
+#
+#     ed_ap = EDAutopilot(cb=None)
+#     wp = EDWayPoint(ed_ap, True)  # False = Horizons
+#     wp.step = 0  # start at first waypoint
+#     keys = EDKeys(cb=None)
+#     keys.activate_window = True
+#     wp.ap.stn_svcs_in_ship.select_sell(keys)
+#     wp.ap.stn_svcs_in_ship.sell_commodity(keys, "Aluminium", 1, wp.cargo_parser)
+#     wp.ap.stn_svcs_in_ship.sell_commodity(keys, "Beryllium", 1, wp.cargo_parser)
+#     wp.ap.stn_svcs_in_ship.sell_commodity(keys, "Cobalt", 1, wp.cargo_parser)
+#     #wp.ap.stn_svcs_in_ship.buy_commodity(keys, "Titanium", 5, 200)
+#
+#     # dest = 'Enayex'
+#     #print(dest)
+#
+#     #print("In waypoint_assist, at:"+str(dest))
+#
+#     # already in doc config, test the trade
+#     #wp.execute_trade(keys, dest)
+#
+#     # Set the Route for the waypoint^#
+#     #dest = wp.waypoint_next(ap=None)
+#
+#     #while dest != "":
+#
+#     #  print("Doing: "+str(dest))
+#     #  print(wp.waypoints[dest])
+#
+#     #wp.set_station_target(None, dest)
+#
+#     # Mark this waypoint as complated
+#     #wp.mark_waypoint_complete(dest)
+#
+#     # set target to next waypoint and loop
+#     #dest = wp.waypoint_next(ap=None)
+#
+#
+# if __name__ == "__main__":
+#     main()

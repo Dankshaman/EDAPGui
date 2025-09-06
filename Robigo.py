@@ -1,14 +1,17 @@
-
+from __future__ import annotations
 from time import sleep
 import time
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from EDAPServer import EDAutopilot
 
 '''
 import keyboard
 import win32gui
 
 import Screen_Regions
-from ED_AP import *
+# from ED_AP import *
 from EDJournal import *
 from EDKeys import *
 from EDlogger import logger
@@ -61,7 +64,7 @@ STATE_SC_TO_ROBIGO_MINES = 10
 
 
 class Robigo:
-    def __init__(self, ed_ap):
+    def __init__(self, ed_ap: 'EDAutopilot'):
         self.ap = ed_ap  
         self.mission_redirect = 0
         self.mission_complete = 0

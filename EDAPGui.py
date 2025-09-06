@@ -32,7 +32,6 @@ from Screen_Regions import *
 from EDKeys import *
 from Screen_Regions import reg_scale_for_station
 from EDJournal import *
-from ED_AP import *
 from EDAPWaypointEditor import WaypointEditorTab
 from WingMining import *
 
@@ -152,9 +151,9 @@ class APGui():
             'Single Waypoint Assist': "",
             'CUDA OCR': "RESTART REQUIRED! This requires an NVIDIA GPU with CUDA Cores. you must install CUDA 11.8 and CUDNN for CUDA 11.8.  performance difference is probably minimal.",
             'ELW Scanner': "Will perform FSS scans while FSD Assist is traveling between stars. \nIf the FSS shows a signal in the region of Earth, \nWater or Ammonia type worlds, it will announce that discovery.",
-            'AFK Combat Assist': "Used with a AFK Combat ship in a Rez Zone.",
+            'AFK Combat': "Used with a AFK Combat ship in a Rez Zone.",
             'Fleet Carrier Assist': "Automates fleet carrier jumps along a waypoint route.",
-            'Wing Mining Assist': "Automates wing mining missions.",
+            'Wing Mining': "Automates wing mining missions.",
             'RollRate': "Roll rate your ship has in deg/sec. Higher the number the more maneuverable the ship.",
             'PitchRate': "Pitch (up/down) rate your ship has in deg/sec. Higher the number the more maneuverable the ship.",
             'YawRate': "Yaw rate (rudder) your ship has in deg/sec. Higher the number the more maneuverable the ship.",
@@ -188,12 +187,20 @@ class APGui():
 
         self.gui_loaded = False
         self.log_buffer = queue.Queue()
-        self.callback('log', f'Starting ED Autopilot {EDAP_VERSION}.')
+        self.log_msg(f'Starting ED Autopilot {EDAP_VERSION}.')
 
         self.load_ocr_calibration_data()
-        use_gpu = self.ocr_calibration_data.get('use_gpu_ocr', False)
-        self.ed_ap = EDAutopilot(cb=self.callback, use_gpu_ocr=use_gpu)
-        self.ed_ap.robigo.set_single_loop(self.ed_ap.config['Robigo_Single_Loop'])
+        self.autopilot_server_url = tk.StringVar()
+        self.autopilot_server_url.set("http://127.0.0.1:8001")
+
+        self.config = {}
+        self.ship_configs = {}
+        self.pitchrate = 0.0
+        self.rollrate = 0.0
+        self.yawrate = 0.0
+        self.sunpitchuptime = 0.0
+        self.current_ship_type = None
+        self.last_status_text = ""
 
         self.mouse = MousePoint()
 
@@ -205,221 +212,183 @@ class APGui():
         self.single_waypoint_station = tk.StringVar()
         self.TCE_Destination_Filepath = tk.StringVar()
 
-        self.FSD_A_running = False
-        self.SC_A_running = False
-        self.WP_A_running = False
-        self.RO_A_running = False
-        self.DSS_A_running = False
-        self.SWP_A_running = False
-        self.FC_A_running = False
-        self.WM_A_running = False
-
         self.cv_view = False
 
-        self.TCE_Destination_Filepath.set(self.ed_ap.config['TCEDestinationFilepath'])
-
         self.msgList = self.gui_gen(root)
-
-        self.checkboxvar['Enable Randomness'].set(self.ed_ap.config['EnableRandomness'])
-        self.checkboxvar['Activate Elite for each key'].set(self.ed_ap.config['ActivateEliteEachKey'])
-        self.checkboxvar['Automatic logout'].set(self.ed_ap.config['AutomaticLogout'])
-        self.checkboxvar['Enable Overlay'].set(self.ed_ap.config['OverlayTextEnable'])
-        self.checkboxvar['Enable Voice'].set(self.ed_ap.config['VoiceEnable'])
-        self.checkboxvar['DiscordWebhook'].set(self.ed_ap.config.get('DiscordWebhook', False))
-        self.checkboxvar['CUDA OCR'].set(self.ocr_calibration_data.get('use_gpu_ocr', False))
-
-        self.radiobuttonvar['dss_button'].set(self.ed_ap.config['DSSButton'])
-
-        self.entries['ship']['PitchRate'].delete(0, tk.END)
-        self.entries['ship']['RollRate'].delete(0, tk.END)
-        self.entries['ship']['YawRate'].delete(0, tk.END)
-        self.entries['ship']['SunPitchUp+Time'].delete(0, tk.END)
-
-        self.entries['autopilot']['Sun Bright Threshold'].delete(0, tk.END)
-        self.entries['autopilot']['Nav Align Tries'].delete(0, tk.END)
-        self.entries['autopilot']['Jump Tries'].delete(0, tk.END)
-        self.entries['autopilot']['Docking Retries'].delete(0, tk.END)
-        self.entries['autopilot']['Wait For Autodock'].delete(0, tk.END)
-
-        self.entries['refuel']['Refuel Threshold'].delete(0, tk.END)
-        self.entries['refuel']['Scoop Timeout'].delete(0, tk.END)
-        self.entries['refuel']['Fuel Threshold Abort'].delete(0, tk.END)
-
-        self.entries['overlay']['X Offset'].delete(0, tk.END)
-        self.entries['overlay']['Y Offset'].delete(0, tk.END)
-        self.entries['overlay']['Font Size'].delete(0, tk.END)
-
-        self.entries['buttons']['Start FSD'].delete(0, tk.END)
-        self.entries['buttons']['Start SC'].delete(0, tk.END)
-        self.entries['buttons']['Start Robigo'].delete(0, tk.END)
-        self.entries['buttons']['Stop All'].delete(0, tk.END)
-
-        self.entries['ship']['PitchRate'].insert(0, float(self.ed_ap.pitchrate))
-        self.entries['ship']['RollRate'].insert(0, float(self.ed_ap.rollrate))
-        self.entries['ship']['YawRate'].insert(0, float(self.ed_ap.yawrate))
-        self.entries['ship']['SunPitchUp+Time'].insert(0, float(self.ed_ap.sunpitchuptime))
-
-        self.entries['autopilot']['Sun Bright Threshold'].insert(0, int(self.ed_ap.config['SunBrightThreshold']))
-        self.entries['autopilot']['Nav Align Tries'].insert(0, int(self.ed_ap.config['NavAlignTries']))
-        self.entries['autopilot']['Jump Tries'].insert(0, int(self.ed_ap.config['JumpTries']))
-        self.entries['autopilot']['Docking Retries'].insert(0, int(self.ed_ap.config['DockingRetries']))
-        self.entries['autopilot']['Wait For Autodock'].insert(0, int(self.ed_ap.config['WaitForAutoDockTimer']))
-        self.entries['refuel']['Refuel Threshold'].insert(0, int(self.ed_ap.config['RefuelThreshold']))
-        self.entries['refuel']['Scoop Timeout'].insert(0, int(self.ed_ap.config['FuelScoopTimeOut']))
-        self.entries['refuel']['Fuel Threshold Abort'].insert(0, int(self.ed_ap.config['FuelThreasholdAbortAP']))
-        self.entries['overlay']['X Offset'].insert(0, int(self.ed_ap.config['OverlayTextXOffset']))
-        self.entries['overlay']['Y Offset'].insert(0, int(self.ed_ap.config['OverlayTextYOffset']))
-        self.entries['overlay']['Font Size'].insert(0, int(self.ed_ap.config['OverlayTextFontSize']))
-
-        self.entries['buttons']['Start FSD'].insert(0, str(self.ed_ap.config['HotKey_StartFSD']))
-        self.entries['buttons']['Start SC'].insert(0, str(self.ed_ap.config['HotKey_StartSC']))
-        self.entries['buttons']['Start Robigo'].insert(0, str(self.ed_ap.config['HotKey_StartRobigo']))
-        self.entries['buttons']['Stop All'].insert(0, str(self.ed_ap.config['HotKey_StopAllAssists']))
-
-        self.entries['discord']['Webhook URL'].delete(0, tk.END)
-        self.entries['discord']['Webhook URL'].insert(0, self.ed_ap.config.get('DiscordWebhookURL', ''))
-        self.entries['discord']['User ID'].delete(0, tk.END)
-        self.entries['discord']['User ID'].insert(0, self.ed_ap.config.get('DiscordUserID', ''))
-
-        self.entries['ocr']['OcrServerUrl'].delete(0, tk.END)
-        self.entries['ocr']['OcrServerUrl'].insert(0, self.ed_ap.config.get('OcrServerUrl', 'http://127.0.0.1:8000/ocr'))
-
-        # Wing Mining Settings
-        self.entries['wing_mining_station_a'].insert(0, self.ed_ap.config.get('WingMining_StationA', ''))
-        self.entries['wing_mining_station_b'].insert(0, self.ed_ap.config.get('WingMining_StationB', ''))
-        self.entries['wing_mining_fc_a_bertrandite'].insert(0, self.ed_ap.config.get('WingMining_FC_A_Bertrandite', ''))
-        self.entries['wing_mining_fc_a_gold'].insert(0, self.ed_ap.config.get('WingMining_FC_A_Gold', ''))
-        self.entries['wing_mining_fc_a_indite'].insert(0, self.ed_ap.config.get('WingMining_FC_A_Indite', ''))
-        self.entries['wing_mining_fc_a_silver'].insert(0, self.ed_ap.config.get('WingMining_FC_A_Silver', ''))
-        self.entries['wing_mining_fc_b_bertrandite'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Bertrandite', ''))
-        self.entries['wing_mining_fc_b_gold'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Gold', ''))
-        self.entries['wing_mining_fc_b_indite'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Indite', ''))
-        self.entries['wing_mining_fc_b_silver'].insert(0, self.ed_ap.config.get('WingMining_FC_B_Silver', ''))
-        self.entries['wing_mining_discord_data_path'].insert(0, self.ed_ap.config.get('WingMiningDiscordDataPath', 'discord_data.json'))
-        self.checkboxvar['WingMining_SkipDepotCheck'].set(self.ed_ap.config.get('WingMining_SkipDepotCheck', False))
-        self.checkboxvar['WingMining_MissionScannerMode'].set(self.ed_ap.config.get('WingMining_MissionScannerMode', False))
-
-        completed_missions = self.ed_ap.config.get('WingMining_CompletedMissions', 0)
-        self.completed_missions_var.set(str(completed_missions))
-        self.entries['wing_mining_mission_count'].insert(0, str(completed_missions))
-
-
-        if self.ed_ap.config['LogDEBUG']:
-            self.radiobuttonvar['debug_mode'].set("Debug")
-        elif self.ed_ap.config['LogINFO']:
-            self.radiobuttonvar['debug_mode'].set("Info")
-        else:
-            self.radiobuttonvar['debug_mode'].set("Error")
-
-        self.checkboxvar['Debug Overlay'].set(self.ed_ap.config['DebugOverlay'])
-        if 'DisableLogFile' in self.ed_ap.config:
-            self.checkboxvar['DisableLogFile'].set(self.ed_ap.config['DisableLogFile'])
-
-        # global trap for these keys, the 'end' key will stop any current AP action
-        # the 'home' key will start the FSD Assist.  May want another to start SC Assist
-
-        keyboard.add_hotkey(self.ed_ap.config['HotKey_StopAllAssists'], self.stop_all_assists)
-        keyboard.add_hotkey(self.ed_ap.config['HotKey_StartFSD'], self.callback, args=('fsd_start', None))
-        keyboard.add_hotkey(self.ed_ap.config['HotKey_StartSC'],  self.callback, args=('sc_start',  None))
-        keyboard.add_hotkey(self.ed_ap.config['HotKey_StartRobigo'],  self.callback, args=('robigo_start',  None))
+        self.load_config_from_server()
 
         # check for updates
         self.check_updates()
 
-        self.ed_ap.gui_loaded = True
         self.gui_loaded = True
         # Send a log entry which will flush out the buffer.
-        self.callback('log', 'ED Autopilot loaded successfully.')
+        self.log_msg('ED Autopilot GUI loaded successfully.')
 
-    # callback from the EDAP, to configure GUI items
-    def callback(self, msg, body=None):
+        # Start the server polling thread
+        self.polling_thread = kthread.KThread(target=self.poll_server, name="ServerPoller")
+        self.polling_thread.start()
+
+    def load_config_from_server(self):
+        try:
+            response = requests.get(f"{self.autopilot_server_url.get()}/config")
+            response.raise_for_status()
+            data = response.json()
+
+            self.config = data.get('config', {})
+            self.ship_configs = data.get('ship_configs', {})
+            self.pitchrate = data.get('pitch', 0.0)
+            self.rollrate = data.get('roll', 0.0)
+            self.yawrate = data.get('yaw', 0.0)
+            self.sunpitchuptime = data.get('sunpitchuptime', 0.0)
+
+            self.TCE_Destination_Filepath.set(self.config.get('TCEDestinationFilepath', ''))
+
+            self.checkboxvar['Enable Randomness'].set(self.config.get('EnableRandomness', False))
+            self.checkboxvar['Activate Elite for each key'].set(self.config.get('ActivateEliteEachKey', False))
+            self.checkboxvar['Automatic logout'].set(self.config.get('AutomaticLogout', False))
+            self.checkboxvar['Enable Overlay'].set(self.config.get('OverlayTextEnable', False))
+            self.checkboxvar['Enable Voice'].set(self.config.get('VoiceEnable', False))
+            self.checkboxvar['DiscordWebhook'].set(self.config.get('DiscordWebhook', False))
+            self.checkboxvar['CUDA OCR'].set(self.ocr_calibration_data.get('use_gpu_ocr', False))
+
+            self.radiobuttonvar['dss_button'].set(self.config.get('DSSButton', 'Primary'))
+
+            self.entries['ship']['PitchRate'].delete(0, tk.END)
+            self.entries['ship']['RollRate'].delete(0, tk.END)
+            self.entries['ship']['YawRate'].delete(0, tk.END)
+            self.entries['ship']['SunPitchUp+Time'].delete(0, tk.END)
+            self.entries['ship']['PitchRate'].insert(0, float(self.pitchrate))
+            self.entries['ship']['RollRate'].insert(0, float(self.rollrate))
+            self.entries['ship']['YawRate'].insert(0, float(self.yawrate))
+            self.entries['ship']['SunPitchUp+Time'].insert(0, float(self.sunpitchuptime))
+
+            self.entries['autopilot']['Sun Bright Threshold'].delete(0, tk.END)
+            self.entries['autopilot']['Nav Align Tries'].delete(0, tk.END)
+            self.entries['autopilot']['Jump Tries'].delete(0, tk.END)
+            self.entries['autopilot']['Docking Retries'].delete(0, tk.END)
+            self.entries['autopilot']['Wait For Autodock'].delete(0, tk.END)
+            self.entries['autopilot']['Sun Bright Threshold'].insert(0, int(self.config.get('SunBrightThreshold', 125)))
+            self.entries['autopilot']['Nav Align Tries'].insert(0, int(self.config.get('NavAlignTries', 3)))
+            self.entries['autopilot']['Jump Tries'].insert(0, int(self.config.get('JumpTries', 3)))
+            self.entries['autopilot']['Docking Retries'].insert(0, int(self.config.get('DockingRetries', 30)))
+            self.entries['autopilot']['Wait For Autodock'].insert(0, int(self.config.get('WaitForAutoDockTimer', 240)))
+
+            self.entries['refuel']['Refuel Threshold'].delete(0, tk.END)
+            self.entries['refuel']['Scoop Timeout'].delete(0, tk.END)
+            self.entries['refuel']['Fuel Threshold Abort'].delete(0, tk.END)
+            self.entries['refuel']['Refuel Threshold'].insert(0, int(self.config.get('RefuelThreshold', 65)))
+            self.entries['refuel']['Scoop Timeout'].insert(0, int(self.config.get('FuelScoopTimeOut', 35)))
+            self.entries['refuel']['Fuel Threshold Abort'].insert(0, int(self.config.get('FuelThreasholdAbortAP', 10)))
+
+            self.entries['overlay']['X Offset'].delete(0, tk.END)
+            self.entries['overlay']['Y Offset'].delete(0, tk.END)
+            self.entries['overlay']['Font Size'].delete(0, tk.END)
+            self.entries['overlay']['X Offset'].insert(0, int(self.config.get('OverlayTextXOffset', 50)))
+            self.entries['overlay']['Y Offset'].insert(0, int(self.config.get('OverlayTextYOffset', 400)))
+            self.entries['overlay']['Font Size'].insert(0, int(self.config.get('OverlayTextFontSize', 14)))
+
+            self.entries['buttons']['Start FSD'].delete(0, tk.END)
+            self.entries['buttons']['Start SC'].delete(0, tk.END)
+            self.entries['buttons']['Start Robigo'].delete(0, tk.END)
+            self.entries['buttons']['Stop All'].delete(0, tk.END)
+            self.entries['buttons']['Start FSD'].insert(0, str(self.config.get('HotKey_StartFSD', 'home')))
+            self.entries['buttons']['Start SC'].insert(0, str(self.config.get('HotKey_StartSC', 'ins')))
+            self.entries['buttons']['Start Robigo'].insert(0, str(self.config.get('HotKey_StartRobigo', 'pgup')))
+            self.entries['buttons']['Stop All'].insert(0, str(self.config.get('HotKey_StopAllAssists', 'end')))
+
+            self.entries['discord']['Webhook URL'].delete(0, tk.END)
+            self.entries['discord']['Webhook URL'].insert(0, self.config.get('DiscordWebhookURL', ''))
+            self.entries['discord']['User ID'].delete(0, tk.END)
+            self.entries['discord']['User ID'].insert(0, self.config.get('DiscordUserID', ''))
+
+            self.entries['ocr']['OcrServerUrl'].delete(0, tk.END)
+            self.entries['ocr']['OcrServerUrl'].insert(0, self.config.get('OcrServerUrl', 'http://127.0.0.1:8000/ocr'))
+
+            # Wing Mining Settings
+            self.entries['wing_mining_station_a'].insert(0, self.config.get('WingMining_StationA', ''))
+            self.entries['wing_mining_station_b'].insert(0, self.config.get('WingMining_StationB', ''))
+            self.entries['wing_mining_fc_a_bertrandite'].insert(0, self.config.get('WingMining_FC_A_Bertrandite', ''))
+            self.entries['wing_mining_fc_a_gold'].insert(0, self.config.get('WingMining_FC_A_Gold', ''))
+            self.entries['wing_mining_fc_a_indite'].insert(0, self.config.get('WingMining_FC_A_Indite', ''))
+            self.entries['wing_mining_fc_a_silver'].insert(0, self.config.get('WingMining_FC_A_Silver', ''))
+            self.entries['wing_mining_fc_b_bertrandite'].insert(0, self.config.get('WingMining_FC_B_Bertrandite', ''))
+            self.entries['wing_mining_fc_b_gold'].insert(0, self.config.get('WingMining_FC_B_Gold', ''))
+            self.entries['wing_mining_fc_b_indite'].insert(0, self.config.get('WingMining_FC_B_Indite', ''))
+            self.entries['wing_mining_fc_b_silver'].insert(0, self.config.get('WingMining_FC_B_Silver', ''))
+            self.entries['wing_mining_discord_data_path'].insert(0, self.config.get('WingMiningDiscordDataPath', 'discord_data.json'))
+            self.checkboxvar['WingMining_SkipDepotCheck'].set(self.config.get('WingMining_SkipDepotCheck', False))
+            self.checkboxvar['WingMining_MissionScannerMode'].set(self.config.get('WingMining_MissionScannerMode', False))
+
+            completed_missions = self.config.get('WingMining_CompletedMissions', 0)
+            self.completed_missions_var.set(str(completed_missions))
+            self.entries['wing_mining_mission_count'].insert(0, str(completed_missions))
+
+            if self.config.get('LogDEBUG'):
+                self.radiobuttonvar['debug_mode'].set("Debug")
+            elif self.config.get('LogINFO'):
+                self.radiobuttonvar['debug_mode'].set("Info")
+            else:
+                self.radiobuttonvar['debug_mode'].set("Error")
+
+            self.checkboxvar['Debug Overlay'].set(self.config.get('DebugOverlay', False))
+            if 'DisableLogFile' in self.config:
+                self.checkboxvar['DisableLogFile'].set(self.config.get('DisableLogFile', False))
+
+            self.log_msg("Configuration loaded from server.")
+            self.setup_hotkeys()
+
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error loading config from server: {e}")
+            messagebox.showerror("Connection Error", "Could not connect to the autopilot server. Please ensure it is running and the URL is correct.")
+
+    def setup_hotkeys(self):
+        # The keyboard library should handle replacing hotkeys, so we don't need to remove them all.
+        # This also avoids a crash with some versions of the library.
+
+        # Add new hotkeys based on the loaded config
+        keyboard.add_hotkey(self.config.get('HotKey_StopAllAssists', 'end'), self.stop_all_assists)
+        keyboard.add_hotkey(self.config.get('HotKey_StartFSD', 'home'), lambda: self.check_cb_by_hotkey('FSD Route Assist'))
+        keyboard.add_hotkey(self.config.get('HotKey_StartSC', 'ins'), lambda: self.check_cb_by_hotkey('Supercruise Assist'))
+        keyboard.add_hotkey(self.config.get('HotKey_StartRobigo', 'pgup'), lambda: self.check_cb_by_hotkey('Robigo Assist'))
+
+    def check_cb_by_hotkey(self, field):
+        """
+        Toggles the state of a checkbox when a hotkey is pressed.
+        """
+        current_state = self.checkboxvar[field].get()
+        self.checkboxvar[field].set(1 - current_state) # Toggle
+        self.check_cb(field)
+
+    def poll_server(self):
+        while True:
+            try:
+                # Poll for events
+                response = requests.get(f"{self.autopilot_server_url.get()}/events")
+                response.raise_for_status()
+                events = response.json().get('events', [])
+                for event in events:
+                    self.handle_server_event(event['type'], event['payload'])
+
+                # Poll for status
+                status_response = requests.get(f"{self.autopilot_server_url.get()}/status")
+                status_response.raise_for_status()
+                status_data = status_response.json()
+                self.update_gui_from_status(status_data)
+
+            except requests.exceptions.RequestException as e:
+                # Don't spam the log if the server is just not running
+                sleep(2)
+
+            sleep(0.2) # Poll every 200ms
+
+    def handle_server_event(self, msg, body=None):
         if msg == 'log':
             self.log_msg(body)
         elif msg == 'log+vce':
             self.log_msg(body)
-            self.ed_ap.vce.say(body)
+            # Voice should be handled server-side if possible, but we can add a client-side option if needed
         elif msg == 'statusline':
             self.update_statusline(body)
-        elif msg == 'fsd_stop':
-            logger.debug("Detected 'fsd_stop' callback msg")
-            self.checkboxvar['FSD Route Assist'].set(0)
-            self.check_cb('FSD Route Assist')
-        elif msg == 'fsd_start':
-            self.checkboxvar['FSD Route Assist'].set(1)
-            self.check_cb('FSD Route Assist')
-        elif msg == 'sc_stop':
-            logger.debug("Detected 'sc_stop' callback msg")
-            self.checkboxvar['Supercruise Assist'].set(0)
-            self.check_cb('Supercruise Assist')
-        elif msg == 'sc_start':
-            self.checkboxvar['Supercruise Assist'].set(1)
-            self.check_cb('Supercruise Assist')
-        elif msg == 'waypoint_stop':
-            logger.debug("Detected 'waypoint_stop' callback msg")
-            self.checkboxvar['Waypoint Assist'].set(0)
-            self.check_cb('Waypoint Assist')
-        elif msg == 'waypoint_start':
-            self.checkboxvar['Waypoint Assist'].set(1)
-            self.check_cb('Waypoint Assist')
-        elif msg == 'robigo_stop':
-            logger.debug("Detected 'robigo_stop' callback msg")
-            self.checkboxvar['Robigo Assist'].set(0)
-            self.check_cb('Robigo Assist')
-        elif msg == 'robigo_start':
-            self.checkboxvar['Robigo Assist'].set(1)
-            self.check_cb('Robigo Assist')
-        elif msg == 'afk_stop':
-            logger.debug("Detected 'afk_stop' callback msg")
-            self.checkboxvar['AFK Combat Assist'].set(0)
-            self.check_cb('AFK Combat Assist')
-        elif msg == 'dss_start':
-            logger.debug("Detected 'dss_start' callback msg")
-            self.checkboxvar['DSS Assist'].set(1)
-            self.check_cb('DSS Assist')
-        elif msg == 'dss_stop':
-            logger.debug("Detected 'dss_stop' callback msg")
-            self.checkboxvar['DSS Assist'].set(0)
-            self.check_cb('DSS Assist')
-        elif msg == 'single_waypoint_stop':
-            logger.debug("Detected 'single_waypoint_stop' callback msg")
-            self.checkboxvar['Single Waypoint Assist'].set(0)
-            self.check_cb('Single Waypoint Assist')
-        elif msg == 'fc_stop':
-            logger.debug("Detected 'fc_stop' callback msg")
-            self.checkboxvar['Fleet Carrier Assist'].set(0)
-            self.check_cb('Fleet Carrier Assist')
-        elif msg == 'wing_mining_stop':
-            logger.debug("Detected 'wing_mining_stop' callback msg")
-            self.checkboxvar['Wing Mining Assist'].set(0)
-            self.check_cb('Wing Mining Assist')
-
-        elif msg == 'stop_all_assists':
-            logger.debug("Detected 'stop_all_assists' callback msg")
-
-            self.checkboxvar['FSD Route Assist'].set(0)
-            self.check_cb('FSD Route Assist')
-
-            self.checkboxvar['Supercruise Assist'].set(0)
-            self.check_cb('Supercruise Assist')
-
-            self.checkboxvar['Waypoint Assist'].set(0)
-            self.check_cb('Waypoint Assist')
-
-            self.checkboxvar['Robigo Assist'].set(0)
-            self.check_cb('Robigo Assist')
-
-            self.checkboxvar['AFK Combat Assist'].set(0)
-            self.check_cb('AFK Combat Assist')
-
-            self.checkboxvar['DSS Assist'].set(0)
-            self.check_cb('DSS Assist')
-
-            self.checkboxvar['Single Waypoint Assist'].set(0)
-            self.check_cb('Single Waypoint Assist')
-
-            self.checkboxvar['Fleet Carrier Assist'].set(0)
-            self.check_cb('Fleet Carrier Assist')
-
         elif msg == 'jumpcount':
             self.update_jumpcount(body)
         elif msg == 'update_ship_cfg':
@@ -428,29 +397,93 @@ class APGui():
             self.completed_missions_var.set(str(body))
             self.entries['wing_mining_mission_count'].delete(0, tk.END)
             self.entries['wing_mining_mission_count'].insert(0, str(body))
+        # The '..._stop' messages can be handled by the general status update
+        # but we can also handle them here for immediate feedback if desired.
+        elif msg.endswith('_stop'):
+             # e.g. 'fsd_stop' -> 'FSD Route Assist'
+            assist_name = msg.replace('_', ' ').replace('stop', 'Assist').title()
+            if 'Fsd' in assist_name: assist_name = 'FSD Route Assist'
+            if 'Sc' in assist_name: assist_name = 'Supercruise Assist'
+            if 'Afk' in assist_name: assist_name = 'AFK Combat Assist'
+            if 'Fc' in assist_name: assist_name = 'Fleet Carrier Assist'
+
+            if assist_name in self.checkboxvar:
+                if self.checkboxvar[assist_name].get() == 1:
+                    self.checkboxvar[assist_name].set(0)
+                    self.check_cb(assist_name) # To update button states
+
+    def update_gui_from_status(self, status_data):
+        # Mapping from status key to GUI checkbox field name for MUTUALLY EXCLUSIVE assists
+        assist_status_map = {
+            'fsd_assist_enabled': 'FSD Route Assist',
+            'sc_assist_enabled': 'Supercruise Assist',
+            'waypoint_assist_enabled': 'Waypoint Assist',
+            'robigo_assist_enabled': 'Robigo Assist',
+            'afk_combat_assist_enabled': 'AFK Combat',
+            'dss_assist_enabled': 'DSS Assist',
+            'fc_assist_enabled': 'Fleet Carrier Assist',
+            'wing_mining_assist_enabled': 'Wing Mining',
+        }
+
+        # Determine which, if any, main assist is active from the server status
+        active_assist_from_server = None
+        for status_key, field_name in assist_status_map.items():
+            if status_data.get(status_key, False):
+                active_assist_from_server = field_name
+                break
+
+        # Update the state of all main assist checkboxes
+        for field_name in self.lab_ck: # Iterate over UI elements that actually exist
+            is_active = (field_name == active_assist_from_server)
+
+            # Update the checkbutton variable if it doesn't match the server state
+            if self.checkboxvar[field_name].get() != is_active:
+                self.checkboxvar[field_name].set(is_active)
+
+            # Update the widget's enabled/disabled state
+            if active_assist_from_server and not is_active:
+                self.lab_ck[field_name].config(state='disabled')
+            else:
+                self.lab_ck[field_name].config(state='active')
+
+        # Separately, handle the Single Waypoint Assist UI elements
+        swp_running = status_data.get('single_waypoint_enabled', False)
+        if self.checkboxvar['Single Waypoint Assist'].get() != swp_running:
+            self.checkboxvar['Single Waypoint Assist'].set(swp_running)
+
+        # Disable the controls if the assist is running
+        new_state = 'disabled' if swp_running else 'normal'
+        self.swp_system_entry.config(state=new_state)
+        self.swp_station_entry.config(state=new_state)
+        # The checkbox itself should probably be disabled too when running
+        self.swp_checkbox.config(state=new_state)
+
+        # Update the main status line
+        self.update_statusline(status_data.get('ap_state', 'Idle'))
+        self.current_ship_type = status_data.get('ship_state', {}).get('type')
+
+        self.update_statusline(status_data.get('ap_state', 'Idle'))
+        self.current_ship_type = status_data.get('ship_state', {}).get('type')
+
 
     def update_ship_cfg(self):
-        # load up the display with what we read from ED_AP for the current ship
-        self.entries['ship']['PitchRate'].delete(0, tk.END)
-        self.entries['ship']['RollRate'].delete(0, tk.END)
-        self.entries['ship']['YawRate'].delete(0, tk.END)
-        self.entries['ship']['SunPitchUp+Time'].delete(0, tk.END)
-
-        self.entries['ship']['PitchRate'].insert(0, self.ed_ap.pitchrate)
-        self.entries['ship']['RollRate'].insert(0, self.ed_ap.rollrate)
-        self.entries['ship']['YawRate'].insert(0, self.ed_ap.yawrate)
-        self.entries['ship']['SunPitchUp+Time'].insert(0, self.ed_ap.sunpitchuptime)
-        self.checkboxvar['AutoDockBoost'].set(self.ed_ap.autodock_boost)
-        self.entries['ship']['AutoDockForwardTime'].delete(0, tk.END)
-        self.entries['ship']['AutoDockForwardTime'].insert(0, self.ed_ap.autodock_forward_time)
-        self.entries['ship']['AutoDockDelayTime'].delete(0, tk.END)
-        self.entries['ship']['AutoDockDelayTime'].insert(0, self.ed_ap.autodock_delay_time)
+        # This can be called by an event from the server when the ship changes
+        self.log_msg("Ship changed, reloading configuration from server.")
+        self.load_config_from_server()
 
     def calibrate_callback(self):
-        self.ed_ap.calibrate_target()
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/calibrate/target")
+            self.log_msg("Target calibration started.")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting target calibration: {e}")
 
     def calibrate_compass_callback(self):
-        self.ed_ap.calibrate_compass()
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/calibrate/compass")
+            self.log_msg("Compass calibration started.")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting compass calibration: {e}")
 
     def quit(self):
         logger.debug("Entered: quit")
@@ -458,91 +491,90 @@ class APGui():
 
     def close_window(self):
         logger.debug("Entered: close_window")
-        self.stop_fsd()
-        self.stop_sc()
-        self.ed_ap.quit()
+        self.stop_all_assists()
+        if hasattr(self, 'polling_thread') and self.polling_thread.is_alive():
+            self.polling_thread.terminate()
         sleep(0.1)
         self.root.destroy()
 
     # this routine is to stop any current autopilot activity
     def stop_all_assists(self):
         logger.debug("Entered: stop_all_assists")
-        self.callback('stop_all_assists')
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/stop_all")
+            self.log_msg("Sent stop all assists command.")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error stopping all assists: {e}")
 
     def start_fsd(self):
         logger.debug("Entered: start_fsd")
-        self.ed_ap.set_fsd_assist(True)
-        self.FSD_A_running = True
-        self.log_msg("FSD Route Assist start")
-        self.ed_ap.vce.say("FSD Route Assist On")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/start/fsd")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting FSD assist: {e}")
 
     def stop_fsd(self):
         logger.debug("Entered: stop_fsd")
-        self.ed_ap.set_fsd_assist(False)
-        self.FSD_A_running = False
-        self.log_msg("FSD Route Assist stop")
-        self.ed_ap.vce.say("FSD Route Assist Off")
-        self.update_statusline("Idle")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/stop/fsd")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error stopping FSD assist: {e}")
 
     def start_sc(self):
         logger.debug("Entered: start_sc")
-        self.ed_ap.set_sc_assist(True)
-        self.SC_A_running = True
-        self.log_msg("SC Assist start")
-        self.ed_ap.vce.say("Supercruise Assist On")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/start/sc")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting SC assist: {e}")
 
     def stop_sc(self):
         logger.debug("Entered: stop_sc")
-        self.ed_ap.set_sc_assist(False)
-        self.SC_A_running = False
-        self.log_msg("SC Assist stop")
-        self.ed_ap.vce.say("Supercruise Assist Off")
-        self.update_statusline("Idle")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/stop/sc")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error stopping SC assist: {e}")
 
     def start_waypoint(self):
         logger.debug("Entered: start_waypoint")
-        self.ed_ap.set_waypoint_assist(True)
-        self.WP_A_running = True
-        self.log_msg("Waypoint Assist start")
-        self.ed_ap.vce.say("Waypoint Assist On")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/start/waypoint")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting waypoint assist: {e}")
 
     def stop_waypoint(self):
         logger.debug("Entered: stop_waypoint")
-        self.ed_ap.set_waypoint_assist(False)
-        self.WP_A_running = False
-        self.log_msg("Waypoint Assist stop")
-        self.ed_ap.vce.say("Waypoint Assist Off")
-        self.update_statusline("Idle")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/stop/waypoint")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error stopping waypoint assist: {e}")
 
     def start_robigo(self):
         logger.debug("Entered: start_robigo")
-        self.ed_ap.set_robigo_assist(True)
-        self.RO_A_running = True
-        self.log_msg("Robigo Assist start")
-        self.ed_ap.vce.say("Robigo Assist On")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/start/robigo")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting robigo assist: {e}")
 
     def stop_robigo(self):
         logger.debug("Entered: stop_robigo")
-        self.ed_ap.set_robigo_assist(False)
-        self.RO_A_running = False
-        self.log_msg("Robigo Assist stop")
-        self.ed_ap.vce.say("Robigo Assist Off")
-        self.update_statusline("Idle")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/stop/robigo")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error stopping robigo assist: {e}")
 
     def start_dss(self):
         logger.debug("Entered: start_dss")
-        self.ed_ap.set_dss_assist(True)
-        self.DSS_A_running = True
-        self.log_msg("DSS Assist start")
-        self.ed_ap.vce.say("DSS Assist On")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/start/dss")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting DSS assist: {e}")
 
     def stop_dss(self):
         logger.debug("Entered: stop_dss")
-        self.ed_ap.set_dss_assist(False)
-        self.DSS_A_running = False
-        self.log_msg("DSS Assist stop")
-        self.ed_ap.vce.say("DSS Assist Off")
-        self.update_statusline("Idle")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/stop/dss")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error stopping DSS assist: {e}")
 
     def start_single_waypoint_assist(self):
         """ The debug command to go to a system or station or both."""
@@ -551,49 +583,46 @@ class APGui():
         station = self.single_waypoint_station.get()
 
         if system != "" or station != "":
-            self.ed_ap.set_single_waypoint_assist(system, station, True)
-            self.SWP_A_running = True
-            self.log_msg("Single Waypoint Assist start")
-            self.ed_ap.vce.say("Single Waypoint Assist On")
+            try:
+                requests.post(f"{self.autopilot_server_url.get()}/start/single_waypoint", json={"system": system, "station": station})
+            except requests.exceptions.RequestException as e:
+                self.log_msg(f"Error starting single waypoint assist: {e}")
 
     def stop_single_waypoint_assist(self):
         """ The debug command to go to a system or station or both."""
         logger.debug("Entered: stop_single_waypoint_assist")
-        self.ed_ap.set_single_waypoint_assist("", "", False)
-        self.SWP_A_running = False
-        self.log_msg("Single Waypoint Assist stop")
-        self.ed_ap.vce.say("Single Waypoint Assist Off")
-        self.update_statusline("Idle")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/stop/single_waypoint")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error stopping single waypoint assist: {e}")
 
     def start_fc(self):
         logger.debug("Entered: start_fc")
-        self.ed_ap.set_fc_assist(True)
-        self.FC_A_running = True
-        self.log_msg("Fleet Carrier Assist start")
-        self.ed_ap.vce.say("Fleet Carrier Assist On")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/start/fc")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting Fleet Carrier assist: {e}")
 
     def stop_fc(self):
         logger.debug("Entered: stop_fc")
-        self.ed_ap.set_fc_assist(False)
-        self.FC_A_running = False
-        self.log_msg("Fleet Carrier Assist stop")
-        self.ed_ap.vce.say("Fleet Carrier Assist Off")
-        self.update_statusline("Idle")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/stop/fc")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error stopping Fleet Carrier assist: {e}")
 
     def start_wing_mining(self):
         logger.debug("Entered: start_wing_mining")
-        self.ed_ap.set_wing_mining_assist(True)
-        self.WM_A_running = True
-        self.log_msg("Wing Mining Assist start")
-        self.ed_ap.vce.say("Wing Mining Assist On")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/start/wing_mining")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting Wing Mining assist: {e}")
 
     def stop_wing_mining(self):
         logger.debug("Entered: stop_wing_mining")
-        self.ed_ap.set_wing_mining_assist(False)
-        self.WM_A_running = False
-        self.log_msg("Wing Mining Assist stop")
-        self.ed_ap.vce.say("Wing Mining Assist Off")
-        self.update_statusline("Idle")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/stop/wing_mining")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error stopping Wing Mining assist: {e}")
 
     def about(self):
         webbrowser.open_new("https://github.com/SumZer0-git/EDAPGui")
@@ -631,8 +660,8 @@ class APGui():
             self.msgList.yview(tk.END)
             logger.info(msg)
 
-            if self.ed_ap.discord_bot:
-                self.ed_ap.discord_bot.send_message(msg)
+            # if self.ed_ap.discord_bot:
+            #     self.ed_ap.discord_bot.send_message(msg)
 
     def set_statusbar(self, txt):
         self.statusbar.configure(text=txt)
@@ -641,17 +670,31 @@ class APGui():
         self.jumpcount.configure(text=txt)
 
     def update_statusline(self, txt):
-        self.status.configure(text="Status: " + txt)
-        self.log_msg(f"Status update: {txt}")
+        if txt != self.last_status_text:
+            self.status.configure(text="Status: " + txt)
+            self.log_msg(f"Status update: {txt}")
+            self.last_status_text = txt
 
     def ship_tst_pitch(self):
-        self.ed_ap.ship_tst_pitch()
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/test/pitch")
+            self.log_msg("Pitch test started.")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting pitch test: {e}")
 
     def ship_tst_roll(self):
-        self.ed_ap.ship_tst_roll()
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/test/roll")
+            self.log_msg("Roll test started.")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting roll test: {e}")
 
     def ship_tst_yaw(self):
-        self.ed_ap.ship_tst_yaw()
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/test/yaw")
+            self.log_msg("Yaw test started.")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting yaw test: {e}")
 
     def open_wp_file(self):
         filetypes = (
@@ -659,325 +702,210 @@ class APGui():
             ('All files', '*.*')
         )
         filename = fd.askopenfilename(title="Waypoint File", initialdir='./waypoints/', filetypes=filetypes)
-        if filename != "":
-            res = self.ed_ap.waypoint.load_waypoint_file(filename)
-            if res:
-                self.wp_filelabel.set("loaded: " + Path(filename).name)
-            else:
-                self.wp_filelabel.set("<no list loaded>")
+        if filename:
+            try:
+                with open(filename, 'r') as f:
+                    content = json.load(f)
+
+                response = requests.post(f"{self.autopilot_server_url.get()}/waypoints/load", json={"filename": filename, "content": content})
+                response.raise_for_status()
+
+                if response.json().get("success"):
+                    self.wp_filelabel.set("loaded: " + Path(filename).name)
+                    self.log_msg(f"Waypoint file loaded: {filename}")
+                else:
+                    self.wp_filelabel.set("<no list loaded>")
+                    self.log_msg(f"Failed to load waypoint file: {filename} - {response.json().get('message', 'Unknown error')}")
+                    messagebox.showerror("Load Error", f"Server failed to load waypoint file: {response.json().get('message', 'Unknown error')}")
+            except FileNotFoundError:
+                messagebox.showerror("Error", f"File not found: {filename}")
+            except json.JSONDecodeError:
+                messagebox.showerror("Error", f"Invalid JSON in file: {filename}")
+            except requests.exceptions.RequestException as e:
+                self.log_msg(f"Error loading waypoint file: {e}")
+                messagebox.showerror("Load Error", f"Could not send waypoint file to server: {e}")
+
 
     def reset_wp_file(self):
         if self.WP_A_running != True:
             mb = messagebox.askokcancel("Waypoint List Reset", "After resetting the Waypoint List, the Waypoint Assist will start again from the first point in the list at the next start.")
             if mb == True:
-                self.ed_ap.waypoint.mark_all_waypoints_not_complete()
+                try:
+                    response = requests.post(f"{self.autopilot_server_url.get()}/waypoints/reset")
+                    response.raise_for_status()
+                    self.log_msg("Waypoint list reset on server.")
+                except requests.exceptions.RequestException as e:
+                    self.log_msg(f"Error resetting waypoints: {e}")
+                    messagebox.showerror("Reset Error", f"Could not reset waypoints on server: {e}")
         else:
             mb = messagebox.showerror("Waypoint List Error", "Waypoint Assist must be disabled before you can reset the list.")
 
     def save_settings(self):
         self.entry_update()
-        self.ed_ap.update_config()
-        self.ed_ap.update_ship_configs()
-        self.save_ocr_calibration_data()
+        try:
+            payload = {
+                "config": self.config,
+                "ship_configs": self.ship_configs
+            }
+            response = requests.post(f"{self.autopilot_server_url.get()}/config", json=payload)
+            response.raise_for_status()
+            self.log_msg("Settings saved to server.")
+            # Also save local-only OCR data
+            self.save_ocr_calibration_data()
+            # Re-apply hotkeys in case they changed
+            self.setup_hotkeys()
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error saving settings: {e}")
+            messagebox.showerror("Save Error", f"Could not save settings to server: {e}")
+
 
     def load_tce_dest(self):
-        filename = self.ed_ap.config['TCEDestinationFilepath']
-        if os.path.exists(filename):
-            with open(filename, 'r') as json_file:
-                f_details = json.load(json_file)
+        # This functionality should now be handled by the server if needed,
+        # or the GUI can read the local file and then use the single waypoint assist.
+        # For now, we will assume local file reading.
+        filepath = self.TCE_Destination_Filepath.get()
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r') as json_file:
+                    f_details = json.load(json_file)
+                self.single_waypoint_system.set(f_details.get('StarSystem', ''))
+                self.single_waypoint_station.set(f_details.get('Station', ''))
+                self.log_msg(f"Loaded TCE destination from {filepath}")
+            except Exception as e:
+                self.log_msg(f"Error reading TCE file: {e}")
+                messagebox.showerror("File Error", f"Could not read TCE destination file: {e}")
+        else:
+            self.log_msg(f"TCE destination file not found: {filepath}")
+            messagebox.showwarning("File Not Found", f"TCE destination file not found at:\n{filepath}")
 
-            self.single_waypoint_system.set(f_details['StarSystem'])
-            self.single_waypoint_station.set(f_details['Station'])
 
     # new data was added to a field, re-read them all for simple logic
     def entry_update(self, event=''):
+        # This method will now update the local config dictionary,
+        # which will then be sent to the server when save_settings is called.
         try:
-            self.ed_ap.pitchrate = float(self.entries['ship']['PitchRate'].get())
-            self.ed_ap.rollrate = float(self.entries['ship']['RollRate'].get())
-            self.ed_ap.yawrate = float(self.entries['ship']['YawRate'].get())
-            self.ed_ap.sunpitchuptime = float(self.entries['ship']['SunPitchUp+Time'].get())
-            self.ed_ap.autodock_forward_time = int(self.entries['ship']['AutoDockForwardTime'].get())
-            self.ed_ap.autodock_delay_time = int(self.entries['ship']['AutoDockDelayTime'].get())
+            # --- Ship Configs ---
+            if not self.current_ship_type:
+                return # Don't do anything if we don't know the ship type yet
 
-            self.ed_ap.config['SunBrightThreshold'] = int(self.entries['autopilot']['Sun Bright Threshold'].get())
-            self.ed_ap.config['NavAlignTries'] = int(self.entries['autopilot']['Nav Align Tries'].get())
-            self.ed_ap.config['JumpTries'] = int(self.entries['autopilot']['Jump Tries'].get())
-            self.ed_ap.config['DockingRetries'] = int(self.entries['autopilot']['Docking Retries'].get())
-            self.ed_ap.config['WaitForAutoDockTimer'] = int(self.entries['autopilot']['Wait For Autodock'].get())
-            self.ed_ap.config['RefuelThreshold'] = int(self.entries['refuel']['Refuel Threshold'].get())
-            self.ed_ap.config['FuelScoopTimeOut'] = int(self.entries['refuel']['Scoop Timeout'].get())
-            self.ed_ap.config['FuelThreasholdAbortAP'] = int(self.entries['refuel']['Fuel Threshold Abort'].get())
-            self.ed_ap.config['OverlayTextXOffset'] = int(self.entries['overlay']['X Offset'].get())
-            self.ed_ap.config['OverlayTextYOffset'] = int(self.entries['overlay']['Y Offset'].get())
-            self.ed_ap.config['OverlayTextFontSize'] = int(self.entries['overlay']['Font Size'].get())
-            self.ed_ap.config['HotKey_StartFSD'] = str(self.entries['buttons']['Start FSD'].get())
-            self.ed_ap.config['HotKey_StartSC'] = str(self.entries['buttons']['Start SC'].get())
-            self.ed_ap.config['HotKey_StartRobigo'] = str(self.entries['buttons']['Start Robigo'].get())
-            self.ed_ap.config['HotKey_StopAllAssists'] = str(self.entries['buttons']['Stop All'].get())
-            self.ed_ap.config['VoiceEnable'] = self.checkboxvar['Enable Voice'].get()
-            self.ed_ap.config['TCEDestinationFilepath'] = str(self.TCE_Destination_Filepath.get())
-            self.ed_ap.config['DebugOverlay'] = self.checkboxvar['Debug Overlay'].get()
+            current_ship_type = self.current_ship_type
+            if current_ship_type not in self.ship_configs.get("Ship_Configs", {}):
+                self.ship_configs["Ship_Configs"][current_ship_type] = {}
 
-            self.ed_ap.config['DiscordWebhook'] = self.checkboxvar['DiscordWebhook'].get()
-            self.ed_ap.config['DiscordWebhookURL'] = self.entries['discord']['Webhook URL'].get()
-            self.ed_ap.config['DiscordUserID'] = self.entries['discord']['User ID'].get()
-            self.ed_ap.config['OcrServerUrl'] = self.entries['ocr']['OcrServerUrl'].get()
+            ship_cfg = self.ship_configs["Ship_Configs"][current_ship_type]
+            ship_cfg['PitchRate'] = float(self.entries['ship']['PitchRate'].get())
+            ship_cfg['RollRate'] = float(self.entries['ship']['RollRate'].get())
+            ship_cfg['YawRate'] = float(self.entries['ship']['YawRate'].get())
+            ship_cfg['SunPitchUp+Time'] = float(self.entries['ship']['SunPitchUp+Time'].get())
+            ship_cfg['AutoDockBoost'] = self.checkboxvar['AutoDockBoost'].get()
+            ship_cfg['AutoDockForwardTime'] = int(self.entries['ship']['AutoDockForwardTime'].get())
+            ship_cfg['AutoDockDelayTime'] = int(self.entries['ship']['AutoDockDelayTime'].get())
 
-            # Wing Mining Settings
-            self.ed_ap.config['WingMining_StationA'] = self.entries['wing_mining_station_a'].get()
-            self.ed_ap.config['WingMining_StationB'] = self.entries['wing_mining_station_b'].get()
-            self.ed_ap.config['WingMining_FC_A_Bertrandite'] = self.entries['wing_mining_fc_a_bertrandite'].get()
-            self.ed_ap.config['WingMining_FC_A_Gold'] = self.entries['wing_mining_fc_a_gold'].get()
-            self.ed_ap.config['WingMining_FC_A_Indite'] = self.entries['wing_mining_fc_a_indite'].get()
-            self.ed_ap.config['WingMining_FC_A_Silver'] = self.entries['wing_mining_fc_a_silver'].get()
-            self.ed_ap.config['WingMining_FC_B_Bertrandite'] = self.entries['wing_mining_fc_b_bertrandite'].get()
-            self.ed_ap.config['WingMining_FC_B_Gold'] = self.entries['wing_mining_fc_b_gold'].get()
-            self.ed_ap.config['WingMining_FC_B_Indite'] = self.entries['wing_mining_fc_b_indite'].get()
-            self.ed_ap.config['WingMining_FC_B_Silver'] = self.entries['wing_mining_fc_b_silver'].get()
-            self.ed_ap.config['WingMiningDiscordDataPath'] = self.entries['wing_mining_discord_data_path'].get()
-            self.ed_ap.config['WingMining_CompletedMissions'] = int(self.entries['wing_mining_mission_count'].get())
-            self.ed_ap.config['WingMining_SkipDepotCheck'] = self.checkboxvar['WingMining_SkipDepotCheck'].get()
-            self.ed_ap.config['WingMining_MissionScannerMode'] = self.checkboxvar['WingMining_MissionScannerMode'].get()
+            # --- Main Config ---
+            self.config['SunBrightThreshold'] = int(self.entries['autopilot']['Sun Bright Threshold'].get())
+            self.config['NavAlignTries'] = int(self.entries['autopilot']['Nav Align Tries'].get())
+            self.config['JumpTries'] = int(self.entries['autopilot']['Jump Tries'].get())
+            self.config['DockingRetries'] = int(self.entries['autopilot']['Docking Retries'].get())
+            self.config['WaitForAutoDockTimer'] = int(self.entries['autopilot']['Wait For Autodock'].get())
+            self.config['RefuelThreshold'] = int(self.entries['refuel']['Refuel Threshold'].get())
+            self.config['FuelScoopTimeOut'] = int(self.entries['refuel']['Scoop Timeout'].get())
+            self.config['FuelThreasholdAbortAP'] = int(self.entries['refuel']['Fuel Threshold Abort'].get())
+            self.config['OverlayTextXOffset'] = int(self.entries['overlay']['X Offset'].get())
+            self.config['OverlayTextYOffset'] = int(self.entries['overlay']['Y Offset'].get())
+            self.config['OverlayTextFontSize'] = int(self.entries['overlay']['Font Size'].get())
+            self.config['HotKey_StartFSD'] = self.entries['buttons']['Start FSD'].get()
+            self.config['HotKey_StartSC'] = self.entries['buttons']['Start SC'].get()
+            self.config['HotKey_StartRobigo'] = self.entries['buttons']['Start Robigo'].get()
+            self.config['HotKey_StopAllAssists'] = self.entries['buttons']['Stop All'].get()
+            self.config['DiscordWebhookURL'] = self.entries['discord']['Webhook URL'].get()
+            self.config['DiscordUserID'] = self.entries['discord']['User ID'].get()
+            self.config['OcrServerUrl'] = self.entries['ocr']['OcrServerUrl'].get()
+            self.config['TCEDestinationFilepath'] = self.TCE_Destination_Filepath.get()
 
-        except:
-            messagebox.showinfo("Exception", "Invalid float entered")
+            self.config['EnableRandomness'] = self.checkboxvar['Enable Randomness'].get()
+            self.config['ActivateEliteEachKey'] = self.checkboxvar['Activate Elite for each key'].get()
+            self.config['AutomaticLogout'] = self.checkboxvar['Automatic logout'].get()
+            self.config['OverlayTextEnable'] = self.checkboxvar['Enable Overlay'].get()
+            self.config['VoiceEnable'] = self.checkboxvar['Enable Voice'].get()
+            self.config['DiscordWebhook'] = self.checkboxvar['DiscordWebhook'].get()
+            self.config['DSSButton'] = self.radiobuttonvar['dss_button'].get()
+            self.config['DebugOverlay'] = self.checkboxvar['Debug Overlay'].get()
+            self.config['DisableLogFile'] = self.checkboxvar['DisableLogFile'].get()
+
+            log_mode = self.radiobuttonvar['debug_mode'].get()
+            self.config['LogDEBUG'] = (log_mode == "Debug")
+            self.config['LogINFO'] = (log_mode == "Info" or log_mode == "Debug")
+
+        except (ValueError, tk.TclError) as e:
+            # Ignore errors that happen during user input
+            pass
+
 
     # ckbox.state:(ACTIVE | DISABLED)
 
     # ('FSD Route Assist', 'Supercruise Assist', 'Enable Voice', 'Enable CV View')
     def check_cb(self, field):
-        # print("got event:",  checkboxvar['FSD Route Assist'].get(), " ", str(FSD_A_running))
-        if field == 'FSD Route Assist':
-            if self.checkboxvar['FSD Route Assist'].get() == 1 and self.FSD_A_running == False:
-                self.lab_ck['AFK Combat Assist'].config(state='disabled')
-                self.lab_ck['Supercruise Assist'].config(state='disabled')
-                self.lab_ck['Waypoint Assist'].config(state='disabled')
-                self.lab_ck['Robigo Assist'].config(state='disabled')
-                self.lab_ck['DSS Assist'].config(state='disabled')
-                self.lab_ck['Fleet Carrier Assist'].config(state='disabled')
-                self.start_fsd()
+        is_checked = self.checkboxvar[field].get() == 1
 
-            elif self.checkboxvar['FSD Route Assist'].get() == 0 and self.FSD_A_running == True:
-                self.stop_fsd()
-                self.lab_ck['Supercruise Assist'].config(state='active')
-                self.lab_ck['AFK Combat Assist'].config(state='active')
-                self.lab_ck['Waypoint Assist'].config(state='active')
-                self.lab_ck['Robigo Assist'].config(state='active')
-                self.lab_ck['Fleet Carrier Assist'].config(state='active')
+        # This map defines the main, mutually exclusive assists
+        assist_map = {
+            'FSD Route Assist': self.start_fsd,
+            'Supercruise Assist': self.start_sc,
+            'Waypoint Assist': self.start_waypoint,
+            'Robigo Assist': self.start_robigo,
+            'AFK Combat': self.start_afk_combat,
+            'DSS Assist': self.start_dss,
+            'Fleet Carrier Assist': self.start_fc,
+            'Wing Mining': self.start_wing_mining
+        }
 
-        if field == 'Wing Mining Assist':
-            if self.checkboxvar['Wing Mining Assist'].get() == 1 and self.WM_A_running == False:
-                self.lab_ck['FSD Route Assist'].config(state='disabled')
-                self.lab_ck['Supercruise Assist'].config(state='disabled')
-                self.lab_ck['AFK Combat Assist'].config(state='disabled')
-                self.lab_ck['Waypoint Assist'].config(state='disabled')
-                self.lab_ck['Robigo Assist'].config(state='disabled')
-                self.lab_ck['DSS Assist'].config(state='disabled')
-                self.lab_ck['Fleet Carrier Assist'].config(state='disabled')
-                self.start_wing_mining()
-            elif self.checkboxvar['Wing Mining Assist'].get() == 0 and self.WM_A_running == True:
-                self.stop_wing_mining()
-                self.lab_ck['FSD Route Assist'].config(state='active')
-                self.lab_ck['Supercruise Assist'].config(state='active')
-                self.lab_ck['AFK Combat Assist'].config(state='active')
-                self.lab_ck['Waypoint Assist'].config(state='active')
-                self.lab_ck['Robigo Assist'].config(state='active')
-                self.lab_ck['DSS Assist'].config(state='active')
-                self.lab_ck['Fleet Carrier Assist'].config(state='active')
+        # If the user clicked a main assist checkbox
+        if field in assist_map:
+            if is_checked:
+                # A button was checked, so start its assist and disable others
+                assist_map[field]()
+                for other_field in assist_map:
+                    if other_field != field:
+                        self.lab_ck[other_field].config(state='disabled')
+            else:
+                # A button was unchecked, so stop all assists and enable all buttons
+                self.stop_all_assists()
+                for other_field in assist_map:
+                    self.lab_ck[other_field].config(state='active')
 
-        if field == 'Fleet Carrier Assist':
-            if self.checkboxvar['Fleet Carrier Assist'].get() == 1 and self.FC_A_running == False:
-                self.lab_ck['FSD Route Assist'].config(state='disabled')
-                self.lab_ck['Supercruise Assist'].config(state='disabled')
-                self.lab_ck['AFK Combat Assist'].config(state='disabled')
-                self.lab_ck['Waypoint Assist'].config(state='disabled')
-                self.lab_ck['Robigo Assist'].config(state='disabled')
-                self.lab_ck['DSS Assist'].config(state='disabled')
-                self.start_fc()
-
-            elif self.checkboxvar['Fleet Carrier Assist'].get() == 0 and self.FC_A_running == True:
-                self.stop_fc()
-                self.lab_ck['FSD Route Assist'].config(state='active')
-                self.lab_ck['Supercruise Assist'].config(state='active')
-                self.lab_ck['AFK Combat Assist'].config(state='active')
-                self.lab_ck['Waypoint Assist'].config(state='active')
-                self.lab_ck['Robigo Assist'].config(state='active')
-                self.lab_ck['DSS Assist'].config(state='active')
-
-        if field == 'Supercruise Assist':
-            if self.checkboxvar['Supercruise Assist'].get() == 1 and self.SC_A_running == False:
-                self.lab_ck['FSD Route Assist'].config(state='disabled')
-                self.lab_ck['AFK Combat Assist'].config(state='disabled')
-                self.lab_ck['Waypoint Assist'].config(state='disabled')
-                self.lab_ck['Robigo Assist'].config(state='disabled')
-                self.lab_ck['DSS Assist'].config(state='disabled')
-                self.lab_ck['Fleet Carrier Assist'].config(state='disabled')
-                self.start_sc()
-
-            elif self.checkboxvar['Supercruise Assist'].get() == 0 and self.SC_A_running == True:
-                self.stop_sc()
-                self.lab_ck['FSD Route Assist'].config(state='active')
-                self.lab_ck['AFK Combat Assist'].config(state='active')
-                self.lab_ck['Waypoint Assist'].config(state='active')
-                self.lab_ck['Robigo Assist'].config(state='active')
-                self.lab_ck['DSS Assist'].config(state='active')
-                self.lab_ck['Fleet Carrier Assist'].config(state='active')
-
-        if field == 'Waypoint Assist':
-            if self.checkboxvar['Waypoint Assist'].get() == 1 and self.WP_A_running == False:
-                self.lab_ck['FSD Route Assist'].config(state='disabled')
-                self.lab_ck['Supercruise Assist'].config(state='disabled')
-                self.lab_ck['AFK Combat Assist'].config(state='disabled')
-                self.lab_ck['Robigo Assist'].config(state='disabled')
-                self.lab_ck['DSS Assist'].config(state='disabled')
-                self.lab_ck['Fleet Carrier Assist'].config(state='disabled')
-                self.start_waypoint()
-
-            elif self.checkboxvar['Waypoint Assist'].get() == 0 and self.WP_A_running == True:
-                self.stop_waypoint()
-                self.lab_ck['FSD Route Assist'].config(state='active')
-                self.lab_ck['Supercruise Assist'].config(state='active')
-                self.lab_ck['AFK Combat Assist'].config(state='active')
-                self.lab_ck['Robigo Assist'].config(state='active')
-                self.lab_ck['DSS Assist'].config(state='active')
-                self.lab_ck['Fleet Carrier Assist'].config(state='active')
-
-        if field == 'Robigo Assist':
-            if self.checkboxvar['Robigo Assist'].get() == 1 and self.RO_A_running == False:
-                self.lab_ck['FSD Route Assist'].config(state='disabled')
-                self.lab_ck['Supercruise Assist'].config(state='disabled')
-                self.lab_ck['AFK Combat Assist'].config(state='disabled')
-                self.lab_ck['Waypoint Assist'].config(state='disabled')
-                self.lab_ck['DSS Assist'].config(state='disabled')
-                self.lab_ck['Fleet Carrier Assist'].config(state='disabled')
-                self.start_robigo()
-
-            elif self.checkboxvar['Robigo Assist'].get() == 0 and self.RO_A_running == True:
-                self.stop_robigo()
-                self.lab_ck['FSD Route Assist'].config(state='active')
-                self.lab_ck['Supercruise Assist'].config(state='active')
-                self.lab_ck['AFK Combat Assist'].config(state='active')
-                self.lab_ck['Waypoint Assist'].config(state='active')
-                self.lab_ck['DSS Assist'].config(state='active')
-                self.lab_ck['Fleet Carrier Assist'].config(state='active')
-
-        if field == 'AFK Combat Assist':
-            if self.checkboxvar['AFK Combat Assist'].get() == 1:
-                self.ed_ap.set_afk_combat_assist(True)
-                self.log_msg("AFK Combat Assist start")
-                self.lab_ck['FSD Route Assist'].config(state='disabled')
-                self.lab_ck['Supercruise Assist'].config(state='disabled')
-                self.lab_ck['Waypoint Assist'].config(state='disabled')
-                self.lab_ck['Robigo Assist'].config(state='disabled')
-                self.lab_ck['DSS Assist'].config(state='disabled')
-                self.lab_ck['Fleet Carrier Assist'].config(state='disabled')
-
-            elif self.checkboxvar['AFK Combat Assist'].get() == 0:
-                self.ed_ap.set_afk_combat_assist(False)
-                self.log_msg("AFK Combat Assist stop")
-                self.lab_ck['FSD Route Assist'].config(state='active')
-                self.lab_ck['Supercruise Assist'].config(state='active')
-                self.lab_ck['Waypoint Assist'].config(state='active')
-                self.lab_ck['Robigo Assist'].config(state='active')
-                self.lab_ck['DSS Assist'].config(state='active')
-                self.lab_ck['Fleet Carrier Assist'].config(state='active')
-
-        if field == 'DSS Assist':
-            if self.checkboxvar['DSS Assist'].get() == 1:
-                self.lab_ck['FSD Route Assist'].config(state='disabled')
-                self.lab_ck['AFK Combat Assist'].config(state='disabled')
-                self.lab_ck['Supercruise Assist'].config(state='disabled')
-                self.lab_ck['Waypoint Assist'].config(state='disabled')
-                self.lab_ck['Robigo Assist'].config(state='disabled')
-                self.lab_ck['Fleet Carrier Assist'].config(state='disabled')
-                self.start_dss()
-
-            elif self.checkboxvar['DSS Assist'].get() == 0:
-                self.stop_dss()
-                self.lab_ck['FSD Route Assist'].config(state='active')
-                self.lab_ck['Supercruise Assist'].config(state='active')
-                self.lab_ck['AFK Combat Assist'].config(state='active')
-                self.lab_ck['Waypoint Assist'].config(state='active')
-                self.lab_ck['Robigo Assist'].config(state='active')
-                self.lab_ck['Fleet Carrier Assist'].config(state='active')
-
-        if self.checkboxvar['Enable Randomness'].get():
-            self.ed_ap.set_randomness(True)
-        else:
-            self.ed_ap.set_randomness(False)
-
-        if self.checkboxvar['Activate Elite for each key'].get():
-            self.ed_ap.set_activate_elite_eachkey(True)
-            self.ed_ap.keys.activate_window=True
-        else:
-            self.ed_ap.set_activate_elite_eachkey(False)
-            self.ed_ap.keys.activate_window = False
-
-        if self.checkboxvar['Automatic logout'].get():
-            self.ed_ap.set_automatic_logout(True)
-        else:
-            self.ed_ap.set_automatic_logout(False)
-
-        if self.checkboxvar['Enable Overlay'].get():
-            self.ed_ap.set_overlay(True)
-        else:
-            self.ed_ap.set_overlay(False)
-
-        if self.checkboxvar['Enable Voice'].get():
-            self.ed_ap.set_voice(True)
-        else:
-            self.ed_ap.set_voice(False)
-
-        if self.checkboxvar['ELW Scanner'].get():
-            self.ed_ap.set_fss_scan(True)
-        else:
-            self.ed_ap.set_fss_scan(False)
-
-        if self.checkboxvar['Enable CV View'].get() == 1:
-            self.cv_view = True
-            x = self.root.winfo_x() + self.root.winfo_width() + 4
-            y = self.root.winfo_y()
-            self.ed_ap.set_cv_view(True, x, y)
-        else:
-            self.cv_view = False
-            self.ed_ap.set_cv_view(False)
-
-        self.ed_ap.config['DSSButton'] = self.radiobuttonvar['dss_button'].get()
-
-        if self.radiobuttonvar['debug_mode'].get() == "Error":
-            self.ed_ap.set_log_error(True)
-        elif self.radiobuttonvar['debug_mode'].get() == "Debug":
-            self.ed_ap.set_log_debug(True)
-        elif self.radiobuttonvar['debug_mode'].get() == "Info":
-            self.ed_ap.set_log_info(True)
-
-        if field == 'Single Waypoint Assist':
-            if self.checkboxvar['Single Waypoint Assist'].get() == 1 and self.SWP_A_running == False:
+        # Handle the single waypoint assist separately as it is not mutually exclusive in the same way
+        elif field == 'Single Waypoint Assist':
+            if is_checked:
                 self.start_single_waypoint_assist()
-            elif self.checkboxvar['Single Waypoint Assist'].get() == 0 and self.SWP_A_running == True:
+                # Disable the controls while it's running
+                self.swp_system_entry.config(state='disabled')
+                self.swp_station_entry.config(state='disabled')
+            else:
+                # This path is usually triggered by the server poll, but if the user clicks it, stop the assist
                 self.stop_single_waypoint_assist()
+                self.swp_system_entry.config(state='normal')
+                self.swp_station_entry.config(state='normal')
 
-        if field == 'Debug Overlay':
-            if self.checkboxvar['Debug Overlay'].get():
-                self.ed_ap.debug_overlay = True
-            else:
-                self.ed_ap.debug_overlay = False
+        # Handle settings checkboxes
+        elif field in ['Enable Randomness', 'Activate Elite for each key', 'Automatic logout',
+                     'Enable Overlay', 'Enable Voice', 'ELW Scanner', 'Enable CV View',
+                     'Debug Overlay', 'DisableLogFile', 'AutoDockBoost', 'DiscordWebhook', 'dss_button', 'debug_mode', 'CUDA OCR']:
+            self.entry_update()
+            self.save_settings()
 
-        if field == 'DisableLogFile':
-            self.ed_ap.set_log_file_disabled(self.checkboxvar['DisableLogFile'].get())
+        # For settings checkboxes, we update the local config and then save it to the server.
+        if field in ['Enable Randomness', 'Activate Elite for each key', 'Automatic logout',
+                     'Enable Overlay', 'Enable Voice', 'ELW Scanner', 'Enable CV View',
+                     'Debug Overlay', 'DisableLogFile', 'AutoDockBoost', 'DiscordWebhook', 'dss_button', 'debug_mode']:
+            self.entry_update()
+            self.save_settings()
 
-        if field == 'AutoDockBoost':
-            self.ed_ap.autodock_boost = self.checkboxvar['AutoDockBoost'].get()
-
-        if field == 'DiscordWebhook':
-            if self.checkboxvar['DiscordWebhook'].get():
-                from DiscordBot import DiscordBot
-                self.ed_ap.discord_bot = DiscordBot(self.ed_ap.config.get('DiscordWebhookURL'), self.ed_ap.config.get('DiscordUserID'))
-            else:
-                self.ed_ap.discord_bot = None
-
-        if field == 'CUDA OCR':
-            self.ocr_calibration_data['use_gpu_ocr'] = self.checkboxvar['CUDA OCR'].get()
+    def start_afk_combat(self):
+        logger.debug("Entered: start_afk_combat")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/start/afk_combat")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting AFK Combat assist: {e}")
 
     def makeform(self, win, ftype, fields, r=0, inc=1, rfrom=0, rto=1000):
         entries = {}
@@ -1435,13 +1363,13 @@ class APGui():
         self.completed_missions_var.set("0")
         self.entries['wing_mining_mission_count'].delete(0, tk.END)
         self.entries['wing_mining_mission_count'].insert(0, "0")
-        self.ed_ap.config['WingMining_CompletedMissions'] = 0
-        self.ed_ap.update_config()
+        self.config['WingMining_CompletedMissions'] = 0
+        self.save_settings() # Save the updated config to the server
         self.log_msg("Wing Mining mission counter reset.")
 
     def gui_gen(self, win):
 
-        modes_check_fields = ('FSD Route Assist', 'Supercruise Assist', 'Waypoint Assist', 'Robigo Assist', 'AFK Combat Assist', 'DSS Assist', 'Fleet Carrier Assist', 'Wing Mining Assist')
+        modes_check_fields = ('FSD Route Assist', 'Supercruise Assist', 'Waypoint Assist', 'Robigo Assist', 'AFK Combat', 'DSS Assist', 'Fleet Carrier Assist', 'Wing Mining')
         ship_entry_fields = ('RollRate', 'PitchRate', 'YawRate')
         autopilot_entry_fields = ('Sun Bright Threshold', 'Nav Align Tries', 'Jump Tries', 'Docking Retries', 'Wait For Autodock')
         buttons_entry_fields = ('Start FSD', 'Start SC', 'Start Robigo', 'Stop All')
@@ -1464,7 +1392,7 @@ class APGui():
 
         page4 = ttk.Frame(nb)
         nb.add(page4, text="Waypoint Editor")
-        self.waypoint_editor_tab = WaypointEditorTab(page4, self.ed_ap.waypoint)
+        self.waypoint_editor_tab = WaypointEditorTab(page4, self.autopilot_server_url)
         self.waypoint_editor_tab.frame.pack(fill="both", expand=True)
 
         page5 = ttk.Frame(nb)
@@ -1624,6 +1552,15 @@ class APGui():
             self.entries['ocr'] = {}
         self.entries['ocr']['OcrServerUrl'] = ent_ocr_url
 
+        # autopilot server settings block
+        blk_ap_server = ttk.LabelFrame(blk_settings, text="Autopilot Server", padding=(10, 5))
+        blk_ap_server.grid(row=0, column=2, padx=2, pady=2, sticky=(tk.N, tk.S, tk.E, tk.W))
+        blk_ap_server.columnconfigure(1, weight=1)
+        lbl_ap_server_url = ttk.Label(blk_ap_server, text="Server URL:")
+        lbl_ap_server_url.grid(row=0, column=0, padx=2, pady=2, sticky=tk.W)
+        ent_ap_server_url = ttk.Entry(blk_ap_server, width=40, textvariable=self.autopilot_server_url)
+        ent_ap_server_url.grid(row=0, column=1, padx=2, pady=2, sticky=(tk.W, tk.E))
+
         # discord settings block
         blk_discord = ttk.LabelFrame(blk_settings, text="DISCORD", padding=(10, 5))
         blk_discord.grid(row=2, column=2, padx=2, pady=2, sticky=(tk.N, tk.S, tk.E, tk.W))
@@ -1644,7 +1581,7 @@ class APGui():
         blk_file_actions = ttk.LabelFrame(page2, text="File Actions", padding=(10, 5))
         blk_file_actions.grid(row=0, column=0, padx=10, pady=5, sticky=(tk.N, tk.S, tk.E, tk.W))
         self.checkboxvar['Enable CV View'] = tk.IntVar()
-        self.checkboxvar['Enable CV View'].set(int(self.ed_ap.config['Enable_CV_View']))
+        self.checkboxvar['Enable CV View'].set(int(self.config.get('Enable_CV_View', 0)))
         cb_enable_cv_view = ttk.Checkbutton(blk_file_actions, text='Enable CV View', variable=self.checkboxvar['Enable CV View'], command=(lambda field='Enable CV View': self.check_cb(field)))
         cb_enable_cv_view.grid(row=2, column=0, padx=2, pady=2, sticky=tk.W)
         btn_restart = ttk.Button(blk_file_actions, text="Restart", command=self.restart_program)
@@ -1694,15 +1631,15 @@ class APGui():
 
         lbl_system = ttk.Label(blk_single_waypoint_asst, text='System:')
         lbl_system.grid(row=0, column=0, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
-        txt_system = ttk.Entry(blk_single_waypoint_asst, textvariable=self.single_waypoint_system)
-        txt_system.grid(row=0, column=1, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
+        self.swp_system_entry = ttk.Entry(blk_single_waypoint_asst, textvariable=self.single_waypoint_system)
+        self.swp_system_entry.grid(row=0, column=1, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
         lbl_station = ttk.Label(blk_single_waypoint_asst, text='Station:')
         lbl_station.grid(row=1, column=0, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
-        txt_station = ttk.Entry(blk_single_waypoint_asst, textvariable=self.single_waypoint_station)
-        txt_station.grid(row=1, column=1, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
+        self.swp_station_entry = ttk.Entry(blk_single_waypoint_asst, textvariable=self.single_waypoint_station)
+        self.swp_station_entry.grid(row=1, column=1, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
         self.checkboxvar['Single Waypoint Assist'] = tk.BooleanVar()
-        cb_single_waypoint = ttk.Checkbutton(blk_single_waypoint_asst, text='Single Waypoint Assist', variable=self.checkboxvar['Single Waypoint Assist'], command=(lambda field='Single Waypoint Assist': self.check_cb(field)))
-        cb_single_waypoint.grid(row=2, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
+        self.swp_checkbox = ttk.Checkbutton(blk_single_waypoint_asst, text='Single Waypoint Assist', variable=self.checkboxvar['Single Waypoint Assist'], command=(lambda field='Single Waypoint Assist': self.check_cb(field)))
+        self.swp_checkbox.grid(row=2, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
 
         lbl_tce = ttk.Label(blk_single_waypoint_asst, text='Trade Computer Extension (TCE)', style="Link.TLabel")
         lbl_tce.bind("<Button-1>", lambda e: hyperlink_callback("https://forums.frontier.co.uk/threads/trade-computer-extension-mk-ii.223056/"))
@@ -1741,9 +1678,8 @@ class APGui():
         logger.debug("Entered: restart_program")
         print("restart now")
 
-        self.stop_fsd()
-        self.stop_sc()
-        self.ed_ap.quit()
+        self.stop_all_assists()
+        # self.ed_ap.quit()
         sleep(0.1)
 
         import sys

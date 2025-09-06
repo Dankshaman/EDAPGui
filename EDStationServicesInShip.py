@@ -4,13 +4,16 @@ import cv2
 import json
 import os
 import re
-import ED_AP
+from typing import TYPE_CHECKING
 from MarketParser import MarketParser
 from ocr_client import OCR
 from StatusParser import StatusParser
 from time import sleep, time
 from EDlogger import logger
 from Screen_Regions import reg_scale_for_station, size_scale_for_station
+
+if TYPE_CHECKING:
+    from EDAPServer import EDAutopilot
 
 """
 File:StationServicesInShip.py    
@@ -24,7 +27,7 @@ Author: Stumpii
 
 class EDStationServicesInShip:
     """ Handles Station Services In Ship. """
-    def __init__(self, ed_ap, screen, keys, cb):
+    def __init__(self, ed_ap: 'EDAutopilot', screen, keys, cb):
         self.ap = ed_ap
         self.ocr = ed_ap.ocr
         self.locale = self.ap.locale
@@ -1064,9 +1067,9 @@ def dummy_cb(msg, body=None):
     pass
 
 
-# Usage Example
-if __name__ == "__main__":
-    test_ed_ap = ED_AP.EDAutopilot(cb=dummy_cb)
-    test_ed_ap.keys.activate_window = True
-    svcs = EDStationServicesInShip(test_ed_ap, test_ed_ap.scr, test_ed_ap.keys, test_ed_ap.ap_ckb)
-    svcs.goto_station_services()
+# # Usage Example
+# if __name__ == "__main__":
+#     test_ed_ap = ED_AP.EDAutopilot(cb=dummy_cb)
+#     test_ed_ap.keys.activate_window = True
+#     svcs = EDStationServicesInShip(test_ed_ap, test_ed_ap.scr, test_ed_ap.keys, test_ed_ap.ap_ckb)
+#     svcs.goto_station_services()

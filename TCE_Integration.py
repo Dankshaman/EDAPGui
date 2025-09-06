@@ -1,15 +1,18 @@
 import os
 import sqlite3
-from typing import Union, Any, final
+from typing import Union, Any, final, TYPE_CHECKING
 
 from EDlogger import logger
+
+if TYPE_CHECKING:
+    from EDAPServer import EDAutopilot
 
 
 @final
 class TceIntegration:
     """ Handles TCE Integration. """
 
-    def __init__(self, ed_ap, cb):
+    def __init__(self, ed_ap: 'EDAutopilot', cb):
         self.ap = ed_ap
         self.ap_ckb = cb
         self.tce_path = self.ap.config['TCEInstallationPath']  # i.e. C:\TCE
@@ -120,10 +123,10 @@ def dummy_cb(msg, body=None):
     pass
 
 
-if __name__ == "__main__":
-    from ED_AP import EDAutopilot
-
-    test_ed_ap = EDAutopilot(cb=dummy_cb)
-
-    tce_integration = TceIntegration(test_ed_ap, test_ed_ap.ap_ckb)
-    tce_integration.write_shopping_list()
+# if __name__ == "__main__":
+#     from ED_AP import EDAutopilot
+#
+#     test_ed_ap = EDAutopilot(cb=dummy_cb)
+#
+#     tce_integration = TceIntegration(test_ed_ap, test_ed_ap.ap_ckb)
+#     tce_integration.write_shopping_list()

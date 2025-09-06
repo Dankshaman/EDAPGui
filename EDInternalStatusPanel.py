@@ -5,6 +5,7 @@ from time import sleep
 import cv2
 import json
 import os
+from typing import TYPE_CHECKING
 from EDAP_data import *
 from EDKeys import EDKeys
 from ocr_client import OCR
@@ -13,11 +14,14 @@ from Screen_Regions import size_scale_for_station
 from StatusParser import StatusParser
 from EDlogger import logger
 
+if TYPE_CHECKING:
+    from EDAPServer import EDAutopilot
+
 
 class EDInternalStatusPanel:
     """ The Internal (Right hand) Ship Status Panel. """
 
-    def __init__(self, ed_ap, screen, keys, cb):
+    def __init__(self, ed_ap: 'EDAutopilot', screen, keys, cb):
         self.ap = ed_ap
         self.ocr = ed_ap.ocr
         self.screen = screen
@@ -469,16 +473,16 @@ def dummy_cb(msg, body=None):
     pass
 
 
-# Usage Example
-if __name__ == "__main__":
-    logger.setLevel(logging.DEBUG)  # Default to log all debug when running this file.
-    from ED_AP import EDAutopilot
-    ap = EDAutopilot(cb=dummy_cb)
-    scr = ap.scr
-    mykeys = ap.keys
-    mykeys.activate_window = True  # Helps with single steps testing
-
-    from Screen import set_focus_elite_window
-    set_focus_elite_window()
-    nav_pnl = EDInternalStatusPanel(ap, scr, mykeys, dummy_cb)
-    nav_pnl.show_inventory_tab()
+# # Usage Example
+# if __name__ == "__main__":
+#     logger.setLevel(logging.DEBUG)  # Default to log all debug when running this file.
+#     from ED_AP import EDAutopilot
+#     ap = EDAutopilot(cb=dummy_cb)
+#     scr = ap.scr
+#     mykeys = ap.keys
+#     mykeys.activate_window = True  # Helps with single steps testing
+#
+#     from Screen import set_focus_elite_window
+#     set_focus_elite_window()
+#     nav_pnl = EDInternalStatusPanel(ap, scr, mykeys, dummy_cb)
+#     nav_pnl.show_inventory_tab()
