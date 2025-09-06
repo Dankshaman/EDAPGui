@@ -27,3 +27,4 @@ tkinter-tooltip
 fastapi
 uvicorn
 python-multipart
+nicegui
