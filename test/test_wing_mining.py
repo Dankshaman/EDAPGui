@@ -27,6 +27,7 @@ class TestWingMining(unittest.TestCase):
         # Instantiate WingMining with the mocked dependencies
         with patch('StateManager.load_state', return_value=None):
             self.wing_mining = WingMining(self.mock_ed_ap)
+            self.wing_mining._update_config_values()
 
     def test_check_depot_when_no_missions_and_no_current_mission(self):
         """
