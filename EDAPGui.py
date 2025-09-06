@@ -151,9 +151,9 @@ class APGui():
             'Single Waypoint Assist': "",
             'CUDA OCR': "RESTART REQUIRED! This requires an NVIDIA GPU with CUDA Cores. you must install CUDA 11.8 and CUDNN for CUDA 11.8.  performance difference is probably minimal.",
             'ELW Scanner': "Will perform FSS scans while FSD Assist is traveling between stars. \nIf the FSS shows a signal in the region of Earth, \nWater or Ammonia type worlds, it will announce that discovery.",
-            'AFK Combat Assist': "Used with a AFK Combat ship in a Rez Zone.",
+            'AFK Combat': "Used with a AFK Combat ship in a Rez Zone.",
             'Fleet Carrier Assist': "Automates fleet carrier jumps along a waypoint route.",
-            'Wing Mining Assist': "Automates wing mining missions.",
+            'Wing Mining': "Automates wing mining missions.",
             'RollRate': "Roll rate your ship has in deg/sec. Higher the number the more maneuverable the ship.",
             'PitchRate': "Pitch (up/down) rate your ship has in deg/sec. Higher the number the more maneuverable the ship.",
             'YawRate': "Yaw rate (rudder) your ship has in deg/sec. Higher the number the more maneuverable the ship.",
@@ -413,25 +413,54 @@ class APGui():
                     self.check_cb(assist_name) # To update button states
 
     def update_gui_from_status(self, status_data):
-        # Mapping from status key to GUI checkbox field name
-        status_map = {
+        # Mapping from status key to GUI checkbox field name for MUTUALLY EXCLUSIVE assists
+        assist_status_map = {
             'fsd_assist_enabled': 'FSD Route Assist',
             'sc_assist_enabled': 'Supercruise Assist',
             'waypoint_assist_enabled': 'Waypoint Assist',
             'robigo_assist_enabled': 'Robigo Assist',
-            'afk_combat_assist_enabled': 'AFK Combat Assist',
+            'afk_combat_assist_enabled': 'AFK Combat',
             'dss_assist_enabled': 'DSS Assist',
-            'single_waypoint_enabled': 'Single Waypoint Assist',
             'fc_assist_enabled': 'Fleet Carrier Assist',
-            'wing_mining_assist_enabled': 'Wing Mining Assist',
+            'wing_mining_assist_enabled': 'Wing Mining',
         }
 
-        for status_key, field_name in status_map.items():
-            is_running = status_data.get(status_key, False)
-            if self.checkboxvar[field_name].get() != is_running:
-                self.checkboxvar[field_name].set(is_running)
-                # This will trigger the check_cb logic to disable/enable other buttons
-                self.check_cb(field_name)
+        # Determine which, if any, main assist is active from the server status
+        active_assist_from_server = None
+        for status_key, field_name in assist_status_map.items():
+            if status_data.get(status_key, False):
+                active_assist_from_server = field_name
+                break
+
+        # Update the state of all main assist checkboxes
+        for field_name in self.lab_ck: # Iterate over UI elements that actually exist
+            is_active = (field_name == active_assist_from_server)
+
+            # Update the checkbutton variable if it doesn't match the server state
+            if self.checkboxvar[field_name].get() != is_active:
+                self.checkboxvar[field_name].set(is_active)
+
+            # Update the widget's enabled/disabled state
+            if active_assist_from_server and not is_active:
+                self.lab_ck[field_name].config(state='disabled')
+            else:
+                self.lab_ck[field_name].config(state='active')
+
+        # Separately, handle the Single Waypoint Assist UI elements
+        swp_running = status_data.get('single_waypoint_enabled', False)
+        if self.checkboxvar['Single Waypoint Assist'].get() != swp_running:
+            self.checkboxvar['Single Waypoint Assist'].set(swp_running)
+
+        # Disable the controls if the assist is running
+        new_state = 'disabled' if swp_running else 'normal'
+        self.swp_system_entry.config(state=new_state)
+        self.swp_station_entry.config(state=new_state)
+        # The checkbox itself should probably be disabled too when running
+        self.swp_checkbox.config(state=new_state)
+
+        # Update the main status line
+        self.update_statusline(status_data.get('ap_state', 'Idle'))
+        self.current_ship_type = status_data.get('ship_state', {}).get('type')
 
         self.update_statusline(status_data.get('ap_state', 'Idle'))
         self.current_ship_type = status_data.get('ship_state', {}).get('type')
@@ -673,17 +702,25 @@ class APGui():
             ('All files', '*.*')
         )
         filename = fd.askopenfilename(title="Waypoint File", initialdir='./waypoints/', filetypes=filetypes)
-        if filename != "":
+        if filename:
             try:
-                response = requests.post(f"{self.autopilot_server_url.get()}/waypoints/load", json={"filename": filename})
+                with open(filename, 'r') as f:
+                    content = json.load(f)
+
+                response = requests.post(f"{self.autopilot_server_url.get()}/waypoints/load", json={"filename": filename, "content": content})
                 response.raise_for_status()
+
                 if response.json().get("success"):
                     self.wp_filelabel.set("loaded: " + Path(filename).name)
                     self.log_msg(f"Waypoint file loaded: {filename}")
                 else:
                     self.wp_filelabel.set("<no list loaded>")
-                    self.log_msg(f"Failed to load waypoint file: {filename}")
-                    messagebox.showerror("Load Error", "Server failed to load waypoint file.")
+                    self.log_msg(f"Failed to load waypoint file: {filename} - {response.json().get('message', 'Unknown error')}")
+                    messagebox.showerror("Load Error", f"Server failed to load waypoint file: {response.json().get('message', 'Unknown error')}")
+            except FileNotFoundError:
+                messagebox.showerror("Error", f"File not found: {filename}")
+            except json.JSONDecodeError:
+                messagebox.showerror("Error", f"Invalid JSON in file: {filename}")
             except requests.exceptions.RequestException as e:
                 self.log_msg(f"Error loading waypoint file: {e}")
                 messagebox.showerror("Load Error", f"Could not send waypoint file to server: {e}")
@@ -810,55 +847,65 @@ class APGui():
     def check_cb(self, field):
         is_checked = self.checkboxvar[field].get() == 1
 
+        # This map defines the main, mutually exclusive assists
         assist_map = {
-            'FSD Route Assist': ('fsd', self.start_fsd, self.stop_fsd),
-            'Supercruise Assist': ('sc', self.start_sc, self.stop_sc),
-            'Waypoint Assist': ('waypoint', self.start_waypoint, self.stop_waypoint),
-            'Robigo Assist': ('robigo', self.start_robigo, self.stop_robigo),
-            'AFK Combat Assist': ('afk_combat', lambda: requests.post(f"{self.autopilot_server_url.get()}/start/afk_combat"), lambda: requests.post(f"{self.autopilot_server_url.get()}/stop/afk_combat")),
-            'DSS Assist': ('dss', self.start_dss, self.stop_dss),
-            'Fleet Carrier Assist': ('fc', self.start_fc, self.stop_fc),
-            'Wing Mining Assist': ('wing_mining', self.start_wing_mining, self.stop_wing_mining),
-            'Single Waypoint Assist': ('single_waypoint', self.start_single_waypoint_assist, self.stop_single_waypoint_assist),
+            'FSD Route Assist': self.start_fsd,
+            'Supercruise Assist': self.start_sc,
+            'Waypoint Assist': self.start_waypoint,
+            'Robigo Assist': self.start_robigo,
+            'AFK Combat': self.start_afk_combat,
+            'DSS Assist': self.start_dss,
+            'Fleet Carrier Assist': self.start_fc,
+            'Wing Mining': self.start_wing_mining
         }
 
-        # Handle mutually exclusive assists
+        # If the user clicked a main assist checkbox
         if field in assist_map:
-            start_func, stop_func = assist_map[field][1], assist_map[field][2]
             if is_checked:
-                for other_field, (other_key, _, _) in assist_map.items():
+                # A button was checked, so start its assist and disable others
+                assist_map[field]()
+                for other_field in assist_map:
                     if other_field != field:
                         self.lab_ck[other_field].config(state='disabled')
-                start_func()
             else:
-                for other_field, (other_key, _, _) in assist_map.items():
-                    if other_field != field:
-                        self.lab_ck[other_field].config(state='active')
-                stop_func()
+                # A button was unchecked, so stop all assists and enable all buttons
+                self.stop_all_assists()
+                for other_field in assist_map:
+                    self.lab_ck[other_field].config(state='active')
 
-        # For settings checkboxes, we update the local config and then save it to the server.
-        if field in ['Enable Randomness', 'Activate Elite for each key', 'Automatic logout',
-                     'Enable Overlay', 'Enable Voice', 'ELW Scanner', 'Enable CV View',
-                     'Debug Overlay', 'DisableLogFile', 'AutoDockBoost', 'DiscordWebhook', 'dss_button', 'debug_mode']:
-            self.entry_update()
-            self.save_settings()
-
-        # For settings checkboxes, we update the local config and then save it to the server.
-        if field in ['Enable Randomness', 'Activate Elite for each key', 'Automatic logout',
-                     'Enable Overlay', 'Enable Voice', 'ELW Scanner', 'Enable CV View',
-                     'Debug Overlay', 'DisableLogFile', 'AutoDockBoost', 'DiscordWebhook', 'dss_button', 'debug_mode']:
-            self.entry_update()
-            self.save_settings()
-
-        if field == 'Single Waypoint Assist':
-            if self.checkboxvar['Single Waypoint Assist'].get() == 1 and self.SWP_A_running == False:
+        # Handle the single waypoint assist separately as it is not mutually exclusive in the same way
+        elif field == 'Single Waypoint Assist':
+            if is_checked:
                 self.start_single_waypoint_assist()
-            elif self.checkboxvar['Single Waypoint Assist'].get() == 0 and self.SWP_A_running == True:
+                # Disable the controls while it's running
+                self.swp_system_entry.config(state='disabled')
+                self.swp_station_entry.config(state='disabled')
+            else:
+                # This path is usually triggered by the server poll, but if the user clicks it, stop the assist
                 self.stop_single_waypoint_assist()
+                self.swp_system_entry.config(state='normal')
+                self.swp_station_entry.config(state='normal')
 
-        if field == 'CUDA OCR':
-            self.ocr_calibration_data['use_gpu_ocr'] = self.checkboxvar['CUDA OCR'].get()
-            self.save_ocr_calibration_data()
+        # Handle settings checkboxes
+        elif field in ['Enable Randomness', 'Activate Elite for each key', 'Automatic logout',
+                     'Enable Overlay', 'Enable Voice', 'ELW Scanner', 'Enable CV View',
+                     'Debug Overlay', 'DisableLogFile', 'AutoDockBoost', 'DiscordWebhook', 'dss_button', 'debug_mode', 'CUDA OCR']:
+            self.entry_update()
+            self.save_settings()
+
+        # For settings checkboxes, we update the local config and then save it to the server.
+        if field in ['Enable Randomness', 'Activate Elite for each key', 'Automatic logout',
+                     'Enable Overlay', 'Enable Voice', 'ELW Scanner', 'Enable CV View',
+                     'Debug Overlay', 'DisableLogFile', 'AutoDockBoost', 'DiscordWebhook', 'dss_button', 'debug_mode']:
+            self.entry_update()
+            self.save_settings()
+
+    def start_afk_combat(self):
+        logger.debug("Entered: start_afk_combat")
+        try:
+            requests.post(f"{self.autopilot_server_url.get()}/start/afk_combat")
+        except requests.exceptions.RequestException as e:
+            self.log_msg(f"Error starting AFK Combat assist: {e}")
 
     def makeform(self, win, ftype, fields, r=0, inc=1, rfrom=0, rto=1000):
         entries = {}
@@ -1322,7 +1369,7 @@ class APGui():
 
     def gui_gen(self, win):
 
-        modes_check_fields = ('FSD Route Assist', 'Supercruise Assist', 'Waypoint Assist', 'Robigo Assist', 'AFK Combat Assist', 'DSS Assist', 'Fleet Carrier Assist', 'Wing Mining Assist')
+        modes_check_fields = ('FSD Route Assist', 'Supercruise Assist', 'Waypoint Assist', 'Robigo Assist', 'AFK Combat', 'DSS Assist', 'Fleet Carrier Assist', 'Wing Mining')
         ship_entry_fields = ('RollRate', 'PitchRate', 'YawRate')
         autopilot_entry_fields = ('Sun Bright Threshold', 'Nav Align Tries', 'Jump Tries', 'Docking Retries', 'Wait For Autodock')
         buttons_entry_fields = ('Start FSD', 'Start SC', 'Start Robigo', 'Stop All')
@@ -1584,15 +1631,15 @@ class APGui():
 
         lbl_system = ttk.Label(blk_single_waypoint_asst, text='System:')
         lbl_system.grid(row=0, column=0, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
-        txt_system = ttk.Entry(blk_single_waypoint_asst, textvariable=self.single_waypoint_system)
-        txt_system.grid(row=0, column=1, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
+        self.swp_system_entry = ttk.Entry(blk_single_waypoint_asst, textvariable=self.single_waypoint_system)
+        self.swp_system_entry.grid(row=0, column=1, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
         lbl_station = ttk.Label(blk_single_waypoint_asst, text='Station:')
         lbl_station.grid(row=1, column=0, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
-        txt_station = ttk.Entry(blk_single_waypoint_asst, textvariable=self.single_waypoint_station)
-        txt_station.grid(row=1, column=1, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
+        self.swp_station_entry = ttk.Entry(blk_single_waypoint_asst, textvariable=self.single_waypoint_station)
+        self.swp_station_entry.grid(row=1, column=1, padx=2, pady=2, columnspan=1, sticky=(tk.N, tk.E, tk.W, tk.S))
         self.checkboxvar['Single Waypoint Assist'] = tk.BooleanVar()
-        cb_single_waypoint = ttk.Checkbutton(blk_single_waypoint_asst, text='Single Waypoint Assist', variable=self.checkboxvar['Single Waypoint Assist'], command=(lambda field='Single Waypoint Assist': self.check_cb(field)))
-        cb_single_waypoint.grid(row=2, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
+        self.swp_checkbox = ttk.Checkbutton(blk_single_waypoint_asst, text='Single Waypoint Assist', variable=self.checkboxvar['Single Waypoint Assist'], command=(lambda field='Single Waypoint Assist': self.check_cb(field)))
+        self.swp_checkbox.grid(row=2, column=0, padx=2, pady=2, columnspan=2, sticky=(tk.N, tk.E, tk.W, tk.S))
 
         lbl_tce = ttk.Label(blk_single_waypoint_asst, text='Trade Computer Extension (TCE)', style="Link.TLabel")
         lbl_tce.bind("<Button-1>", lambda e: hyperlink_callback("https://forums.frontier.co.uk/threads/trade-computer-extension-mk-ii.223056/"))
