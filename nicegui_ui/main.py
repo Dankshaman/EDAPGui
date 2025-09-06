@@ -80,14 +80,33 @@ log_display = ui.log(max_lines=20)
 # Centralized status label
 status_label = ui.label("Status: Idle")
 
+# UI elements that need to be updated by callbacks
+assist_checkboxes = {}
+
 def callback(msg, body=None):
     """Callback function to handle messages from EDAutopilot."""
-    if msg == 'log':
+    if msg == 'log' or msg == 'log+vce':
         message = datetime.now().strftime("%H:%M:%S: ") + body
         log_display.push(message)
     elif msg == 'statusline':
         status_label.set_text("Status: " + body)
         log_display.push(f"Status update: {body}")
+    elif msg == 'fsd_stop':
+        if 'FSD Route Assist' in assist_checkboxes: assist_checkboxes['FSD Route Assist'].value = False
+    elif msg == 'sc_stop':
+        if 'Supercruise Assist' in assist_checkboxes: assist_checkboxes['Supercruise Assist'].value = False
+    elif msg == 'waypoint_stop':
+        if 'Waypoint Assist' in assist_checkboxes: assist_checkboxes['Waypoint Assist'].value = False
+    elif msg == 'robigo_stop':
+        if 'Robigo Assist' in assist_checkboxes: assist_checkboxes['Robigo Assist'].value = False
+    elif msg == 'afk_stop':
+        if 'AFK Combat Assist' in assist_checkboxes: assist_checkboxes['AFK Combat Assist'].value = False
+    elif msg == 'dss_stop':
+        if 'DSS Assist' in assist_checkboxes: assist_checkboxes['DSS Assist'].value = False
+    elif msg == 'fc_stop':
+        if 'Fleet Carrier Assist' in assist_checkboxes: assist_checkboxes['Fleet Carrier Assist'].value = False
+    elif msg == 'wing_mining_stop':
+        if 'Wing Mining Assist' in assist_checkboxes: assist_checkboxes['Wing Mining Assist'].value = False
     else:
         print(f"Unhandled Callback: {msg}, {body}")
 
@@ -97,7 +116,17 @@ ed_ap = EDAutopilot(cb=callback, use_gpu_ocr=app_state['ocr_calibration_data'].g
 @ui.page('/')
 def index_page() -> None:
     with theme.frame('Main', status_label=status_label):
-        create_main_tab(ed_ap, log_display)
+        # Create checkboxes here so they can be accessed by the callback
+        assist_checkboxes['FSD Route Assist'] = ui.checkbox('FSD Route Assist', on_change=lambda e: ed_ap.set_fsd_assist(e.value))
+        assist_checkboxes['Supercruise Assist'] = ui.checkbox('Supercruise Assist', on_change=lambda e: ed_ap.set_sc_assist(e.value))
+        assist_checkboxes['Waypoint Assist'] = ui.checkbox('Waypoint Assist', on_change=lambda e: ed_ap.set_waypoint_assist(e.value))
+        assist_checkboxes['Robigo Assist'] = ui.checkbox('Robigo Assist', on_change=lambda e: ed_ap.set_robigo_assist(e.value))
+        assist_checkboxes['AFK Combat Assist'] = ui.checkbox('AFK Combat Assist', on_change=lambda e: ed_ap.set_afk_combat_assist(e.value))
+        assist_checkboxes['DSS Assist'] = ui.checkbox('DSS Assist', on_change=lambda e: ed_ap.set_dss_assist(e.value))
+        assist_checkboxes['Fleet Carrier Assist'] = ui.checkbox('Fleet Carrier Assist', on_change=lambda e: ed_ap.set_fc_assist(e.value))
+        assist_checkboxes['Wing Mining Assist'] = ui.checkbox('Wing Mining Assist', on_change=lambda e: ed_ap.set_wing_mining_assist(e.value))
+
+        create_main_tab(ed_ap, log_display, assist_checkboxes)
 
 @ui.page('/settings')
 def settings_page() -> None:

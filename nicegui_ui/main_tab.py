@@ -1,17 +1,11 @@
 from nicegui import ui
 
-def create_main_tab(ed_ap, log_display):
+def create_main_tab(ed_ap, log_display, assist_checkboxes):
     with ui.row():
         with ui.card().classes('w-1/2'):
             ui.label('MODE').classes('text-h6')
-            ui.checkbox('FSD Route Assist', on_change=lambda e: ed_ap.set_fsd_assist(e.value))
-            ui.checkbox('Supercruise Assist', on_change=lambda e: ed_ap.set_sc_assist(e.value))
-            ui.checkbox('Waypoint Assist', on_change=lambda e: ed_ap.set_waypoint_assist(e.value))
-            ui.checkbox('Robigo Assist', on_change=lambda e: ed_ap.set_robigo_assist(e.value))
-            ui.checkbox('AFK Combat Assist', on_change=lambda e: ed_ap.set_afk_combat_assist(e.value))
-            ui.checkbox('DSS Assist', on_change=lambda e: ed_ap.set_dss_assist(e.value))
-            ui.checkbox('Fleet Carrier Assist', on_change=lambda e: ed_ap.set_fc_assist(e.value))
-            ui.checkbox('Wing Mining Assist', on_change=lambda e: ed_ap.set_wing_mining_assist(e.value))
+            for checkbox in assist_checkboxes.values():
+                checkbox  # This will render the checkbox
 
         with ui.card().classes('w-1/2'):
             ui.label('SHIP').classes('text-h6')
