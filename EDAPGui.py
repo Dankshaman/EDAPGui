@@ -32,7 +32,6 @@ from Screen_Regions import *
 from EDKeys import *
 from Screen_Regions import reg_scale_for_station
 from EDJournal import *
-#from ED_AP import *
 from EDAPWaypointEditor import WaypointEditorTab
 from WingMining import *
 

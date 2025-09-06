@@ -339,7 +339,7 @@ class WaypointEditorTab:
         self.update_ui()
         self.save_button.config(state="disabled")
         # We can optionally tell the server to create a new empty waypoint list
-        requests.post(f"{self.server_url}/waypoints/save", json={"waypoints": {}})
+        requests.post(f"{self.server_url.get()}/waypoints/save", json={"waypoints": {}})
 
 
     def open_file(self):
@@ -354,7 +354,7 @@ class WaypointEditorTab:
                 with open(filepath, 'r') as f:
                     content = json.load(f)
 
-                response = requests.post(f"{self.server_url}/waypoints/load", json={"filename": filepath, "content": content})
+                response = requests.post(f"{self.server_url.get()}/waypoints/load", json={"filename": filepath, "content": content})
                 response.raise_for_status()
 
                 if response.json().get("success"):
@@ -412,7 +412,7 @@ class WaypointEditorTab:
 
     def load_waypoints_from_server(self):
         try:
-            response = requests.get(f"{self.server_url}/waypoints")
+            response = requests.get(f"{self.server_url.get()}/waypoints")
             response.raise_for_status()
             raw_waypoints = response.json().get("waypoints", {})
             self.populate_internal_waypoints(raw_waypoints)
@@ -424,12 +424,25 @@ class WaypointEditorTab:
     def save_waypoint_file(self, filepath):
         raw_waypoints = self.convert_to_raw_waypoints()
         try:
-            requests.post(f"{self.server_url}/waypoints/save", json={"waypoints": raw_waypoints})
-            self.current_waypoint_filename = filepath
-            # Inform the server to reload the file if it's not watching for changes
-            self.mesg_client.publish(LoadWaypointFileAction(filepath=filepath))
+            # 1. Save the file locally (on the bare-metal machine)
+            with open(filepath, 'w') as f:
+                json.dump(raw_waypoints, f, indent=4)
+
+            # 2. Synchronize the server with the new content
+            response = requests.post(f"{self.server_url.get()}/waypoints/load", json={"filename": filepath, "content": raw_waypoints})
+            response.raise_for_status()
+
+            if not response.json().get("success"):
+                 messagebox.showwarning("Warning", "File saved locally, but failed to sync with server.")
+            else:
+                 # Success
+                 self.current_waypoint_filename = filepath
+                 self.save_button.config(state="normal") # Ensure save button is enabled after save as
+
+        except IOError as e:
+            messagebox.showerror("Error", f"Failed to save file locally: {e}")
         except requests.exceptions.RequestException as e:
-            messagebox.showerror("Error", f"Failed to save waypoints to server: {e}")
+            messagebox.showerror("Error", f"File saved locally, but failed to sync with server: {e}")
 
 
     def start_file_watcher(self, filepath):
@@ -754,7 +767,7 @@ class WaypointEditorTab:
             }
         }
         try:
-            requests.post(f"{self.server_url}/waypoints/add", json={"waypoint": new_waypoint_data})
+            requests.post(f"{self.server_url.get()}/waypoints/add", json={"waypoint": new_waypoint_data})
             self.load_waypoints_from_server()
         except requests.exceptions.RequestException as e:
             messagebox.showerror("Error", f"Failed to add waypoint: {e}")
@@ -765,7 +778,7 @@ class WaypointEditorTab:
             index = self.waypoints_tree.index(selected_item[0])
             key_to_delete = self.waypoints.waypoints[index].name.get()
             try:
-                requests.post(f"{self.server_url}/waypoints/delete", json={"key": key_to_delete})
+                requests.post(f"{self.server_url.get()}/waypoints/delete", json={"key": key_to_delete})
                 self.load_waypoints_from_server()
             except requests.exceptions.RequestException as e:
                 messagebox.showerror("Error", f"Failed to delete waypoint: {e}")
@@ -776,7 +789,7 @@ class WaypointEditorTab:
             index = self.waypoints_tree.index(selected_item[0])
             key_to_move = self.waypoints.waypoints[index].name.get()
             try:
-                requests.post(f"{self.server_url}/waypoints/move", json={"key": key_to_move, "direction": "up"})
+                requests.post(f"{self.server_url.get()}/waypoints/move", json={"key": key_to_move, "direction": "up"})
                 self.load_waypoints_from_server()
             except requests.exceptions.RequestException as e:
                 messagebox.showerror("Error", f"Failed to move waypoint: {e}")
@@ -787,7 +800,7 @@ class WaypointEditorTab:
             index = self.waypoints_tree.index(selected_item[0])
             key_to_move = self.waypoints.waypoints[index].name.get()
             try:
-                requests.post(f"{self.server_url}/waypoints/move", json={"key": key_to_move, "direction": "down"})
+                requests.post(f"{self.server_url.get()}/waypoints/move", json={"key": key_to_move, "direction": "down"})
                 self.load_waypoints_from_server()
             except requests.exceptions.RequestException as e:
                 messagebox.showerror("Error", f"Failed to move waypoint: {e}")
