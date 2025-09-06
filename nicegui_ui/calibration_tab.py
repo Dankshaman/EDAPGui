@@ -19,8 +19,8 @@ def create_calibration_tab(app_state, ed_ap):
             ui.notify("All OCR calibrations have been reset to default. Please restart the application.")
             # This requires a refresh of the page to see the changes in the UI
 
-    with ui.row():
-        with ui.card().classes('w-full'):
+    with ui.grid(columns=2):
+        with ui.card().classes('w-full col-span-2'):
             ui.label('Region Calibration').classes('text-h6')
             region_keys = sorted([key for key, value in app_state['ocr_calibration_data'].items() if isinstance(value, dict) and 'rect' in value])
             region_select = ui.select(region_keys, label='Region')
@@ -38,8 +38,7 @@ def create_calibration_tab(app_state, ed_ap):
 
             ui.button('Calibrate Region', on_click=lambda: ui.notify('Not available in this UI. Please use the original GUI for calibration.'))
 
-    with ui.row():
-        with ui.card().classes('w-full'):
+        with ui.card().classes('w-full col-span-2'):
             ui.label('Size Calibration').classes('text-h6')
             size_keys = sorted([key for key in app_state['ocr_calibration_data'].keys() if '.size.' in key])
             size_select = ui.select(size_keys, label='Size')
@@ -57,7 +56,6 @@ def create_calibration_tab(app_state, ed_ap):
             size_select.on('change', lambda e: update_size_inputs(e.value))
             ui.button('Calibrate Size', on_click=lambda: ui.notify('Not available in this UI. Please use the original GUI for calibration.'))
 
-    with ui.row():
         with ui.card():
             ui.label('Other Calibrations').classes('text-h6')
             ui.button('Calibrate Compass', on_click=ed_ap.calibrate_compass)
@@ -70,6 +68,6 @@ def create_calibration_tab(app_state, ed_ap):
             ui.number('Nav Panel Deskew Angle', value=app_state['ocr_calibration_data'].get('EDNavigationPanel.deskew_angle', 0.0),
                       on_change=lambda e: (app_state['ocr_calibration_data'].update({'EDNavigationPanel.deskew_angle': e.value}), save_and_notify()))
 
-    with ui.row():
-        ui.button('Save All Calibrations', on_click=save_and_notify)
-        ui.button('Reset All to Default', on_click=reset_and_notify)
+        with ui.row().classes('w-full col-span-2'):
+            ui.button('Save All Calibrations', on_click=save_and_notify)
+            ui.button('Reset All to Default', on_click=reset_and_notify)

@@ -1,7 +1,7 @@
 from nicegui import ui
 
 def create_debug_tab(ed_ap):
-    with ui.row():
+    with ui.grid(columns=2):
         with ui.card():
             ui.label('File Actions').classes('text-h6')
             ui.checkbox('Enable CV View', value=ed_ap.config.get('Enable_CV_View', False), on_change=lambda e: ed_ap.config.update({'Enable_CV_View': e.value}))
@@ -15,7 +15,6 @@ def create_debug_tab(ed_ap):
             ui.button('Join Discord', on_click=lambda: ed_ap.open_discord())
             ui.button('About', on_click=lambda: ed_ap.about())
 
-    with ui.row():
         with ui.card():
             ui.label('DEBUG').classes('text-h6')
 
@@ -47,7 +46,6 @@ def create_debug_tab(ed_ap):
             ui.input('TCE Dest json:', value=ed_ap.config.get('TCEDestinationFilepath', ''), on_change=lambda e: ed_ap.config.update({'TCEDestinationFilepath': e.value}))
             ui.button('Load TCE Destination', on_click=lambda: ed_ap.load_tce_dest())
 
-    with ui.row():
         with ui.card():
             ui.label('Debug Buttons').classes('text-h6')
             ui.checkbox('Debug Overlay', value=ed_ap.config.get('DebugOverlay', False), on_change=lambda e: ed_ap.config.update({'DebugOverlay': e.value}))
