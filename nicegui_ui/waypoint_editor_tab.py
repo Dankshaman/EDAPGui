@@ -155,16 +155,14 @@ def create_waypoint_editor_tab(ed_waypoint):
         # ... (upload and other buttons)
 
     with ui.row():
-        waypoints_table = ui.table({
-            'columnDefs': [
-                {'headerName': 'Name', 'field': 'name'},
-                {'headerName': 'System Name', 'field': 'system_name'},
-                {'headerName': 'Station Name', 'field': 'station_name'},
-                {'headerName': 'Skip', 'field': 'skip'},
-                {'headerName': 'Completed', 'field': 'completed'},
-            ],
-            'rowData': [],
-        }, row_key='name', selection='single').classes('w-full h-64')
+        waypoints_columns = [
+            {'name': 'name', 'label': 'Name', 'field': 'name', 'sortable': True},
+            {'name': 'system_name', 'label': 'System Name', 'field': 'system_name', 'sortable': True},
+            {'name': 'station_name', 'label': 'Station Name', 'field': 'station_name', 'sortable': True},
+            {'name': 'skip', 'label': 'Skip', 'field': 'skip'},
+            {'name': 'completed', 'label': 'Completed', 'field': 'completed'},
+        ]
+        waypoints_table = ui.table(columns=waypoints_columns, rows=[], row_key='name', selection='single').classes('w-full h-64')
 
     with ui.row():
         ui.button('Up', on_click=lambda: move_waypoint('up'))
@@ -211,20 +209,22 @@ def create_waypoint_editor_tab(ed_waypoint):
     with ui.row():
         with ui.card().classes('w-1/2'):
             ui.label('Buy Commodities').classes('text-h6')
-            buy_commodities_table = ui.table({
-                'columnDefs': [{'headerName': 'Name', 'field': 'name'}, {'headerName': 'Quantity', 'field': 'quantity'}],
-                'rowData': [],
-            }, row_key='name', selection='single').classes('w-full h-32')
+            buy_commodities_columns = [
+                {'name': 'name', 'label': 'Name', 'field': 'name'},
+                {'name': 'quantity', 'label': 'Quantity', 'field': 'quantity'}
+            ]
+            buy_commodities_table = ui.table(columns=buy_commodities_columns, rows=[], row_key='name', selection='single').classes('w-full h-32')
             with ui.row():
                 ui.button('Add', on_click=lambda: add_commodity('buy'))
                 ui.button('Del', on_click=lambda: delete_commodity('buy'))
 
         with ui.card().classes('w-1/2'):
             ui.label('Sell Commodities').classes('text-h6')
-            sell_commodities_table = ui.table({
-                'columnDefs': [{'headerName': 'Name', 'field': 'name'}, {'headerName': 'Quantity', 'field': 'quantity'}],
-                'rowData': [],
-            }, row_key='name', selection='single').classes('w-full h-32')
+            sell_commodities_columns = [
+                {'name': 'name', 'label': 'Name', 'field': 'name'},
+                {'name': 'quantity', 'label': 'Quantity', 'field': 'quantity'}
+            ]
+            sell_commodities_table = ui.table(columns=sell_commodities_columns, rows=[], row_key='name', selection='single').classes('w-full h-32')
             with ui.row():
                 ui.button('Add', on_click=lambda: add_commodity('sell'))
                 ui.button('Del', on_click=lambda: delete_commodity('sell'))
