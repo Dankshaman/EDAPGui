@@ -27,7 +27,8 @@ def create_debug_tab(ed_ap):
                 else:
                     ed_ap.set_log_error(True)
 
-            ui.radio(['Debug', 'Info', 'Error'], value='Error', on_change=lambda e: set_log_level(e.value)).label('Log Level')
+            ui.radio(['Debug', 'Info', 'Error'], value='Error', on_change=lambda e: set_log_level(e.value))
+            ui.label('Log Level')
             ui.button('Open Log File', on_click=lambda: ed_ap.open_logfile())
             ui.checkbox('Disable Log File', value=ed_ap.config.get('DisableLogFile', False), on_change=lambda e: ed_ap.config.update({'DisableLogFile': e.value}))
 

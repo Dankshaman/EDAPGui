@@ -15,7 +15,8 @@ def create_settings_tab(ed_ap):
 
         with ui.card():
             ui.label('BUTTONS').classes('text-h6')
-            ui.radio(['Primary', 'Secondary'], value=ed_ap.config.get('DSSButton', 'Primary'), on_change=lambda e: ed_ap.config.update({'DSSButton': e.value})).label('DSS Button')
+            ui.radio(['Primary', 'Secondary'], value=ed_ap.config.get('DSSButton', 'Primary'), on_change=lambda e: ed_ap.config.update({'DSSButton': e.value}))
+            ui.label('DSS Button')
             ui.input('Start FSD', value=ed_ap.config.get('HotKey_StartFSD', ''), on_change=lambda e: ed_ap.config.update({'HotKey_StartFSD': e.value}))
             ui.input('Start SC', value=ed_ap.config.get('HotKey_StartSC', ''), on_change=lambda e: ed_ap.config.update({'HotKey_StartSC': e.value}))
             ui.input('Start Robigo', value=ed_ap.config.get('HotKey_StartRobigo', ''), on_change=lambda e: ed_ap.config.update({'HotKey_StartRobigo': e.value}))
