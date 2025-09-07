@@ -1,7 +1,7 @@
 from nicegui import ui
 
 def create_settings_tab(ed_ap):
-    with ui.grid(columns=2):
+    with ui.grid(columns=4):
         with ui.card():
             ui.label('AUTOPILOT').classes('text-h6')
             ui.number('Sun Bright Threshold', value=ed_ap.config.get('SunBrightThreshold', 0), on_change=lambda e: ed_ap.config.update({'SunBrightThreshold': e.value}))
@@ -35,7 +35,7 @@ def create_settings_tab(ed_ap):
             ui.number('Y Offset', value=ed_ap.config.get('OverlayTextYOffset', 0), on_change=lambda e: ed_ap.config.update({'OverlayTextYOffset': e.value}))
             ui.number('Font Size', value=ed_ap.config.get('OverlayTextFontSize', 0), on_change=lambda e: ed_ap.config.update({'OverlayTextFontSize': e.value}))
 
-        with ui.card().classes('w-full col-span-2'):
+        with ui.card().classes('w-full col-span-4'):
             ui.label('INTEGRATIONS').classes('text-h6')
             with ui.grid(columns=2):
                 with ui.card():

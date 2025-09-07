@@ -1,7 +1,7 @@
 from nicegui import ui
 
 def create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls, ship_data):
-    with ui.grid(columns=2):
+    with ui.grid(columns=3):
         with ui.card():
             ui.label('MODE').classes('text-h6')
             with ui.row().classes('w-full'):
@@ -43,36 +43,37 @@ def create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls, ship_d
             ui.button('Test Pitch Rate', on_click=ed_ap.ship_tst_pitch)
             ui.button('Test Yaw Rate', on_click=ed_ap.ship_tst_yaw)
 
-        with ui.card().classes('col-span-2'):
-            ui.label('Waypoints').classes('text-h6')
+        with ui.column():
+            with ui.card():
+                ui.label('Waypoints').classes('text-h6')
 
-            def handle_wp_upload(e):
-                try:
-                    content = e.content.read().decode('utf-8')
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
-                        f.write(content)
-                        filepath = f.name
+                def handle_wp_upload(e):
+                    try:
+                        content = e.content.read().decode('utf-8')
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+                            f.write(content)
+                            filepath = f.name
 
-                    if ed_ap.waypoint.load_waypoint_file(filepath):
-                        ui.notify(f"Loaded waypoint file: {e.name}")
+                        if ed_ap.waypoint.load_waypoint_file(filepath):
+                            ui.notify(f"Loaded waypoint file: {e.name}")
+                        else:
+                            ui.notify(f"Failed to load waypoint file: {e.name}", type='negative')
+                    except Exception as ex:
+                        ui.notify(f"Error: {ex}", type='negative')
+
+                ui.upload(on_upload=handle_wp_upload, auto_upload=True, label="Load Waypoint File").props('icon=folder')
+
+                def reset_wp():
+                    if not ed_ap.waypoint_assist_enabled:
+                        ed_ap.waypoint.mark_all_waypoints_not_complete()
+                        ui.notify("Waypoint list reset.")
                     else:
-                        ui.notify(f"Failed to load waypoint file: {e.name}", type='negative')
-                except Exception as ex:
-                    ui.notify(f"Error: {ex}", type='negative')
+                        ui.notify("Waypoint Assist must be disabled before you can reset the list.", type='negative')
 
-            ui.upload(on_upload=handle_wp_upload, auto_upload=True, label="Load Waypoint File").props('icon=folder')
+                ui.button('Reset Waypoint List', on_click=reset_wp)
 
-            def reset_wp():
-                if not ed_ap.waypoint_assist_enabled:
-                    ed_ap.waypoint.mark_all_waypoints_not_complete()
-                    ui.notify("Waypoint list reset.")
-                else:
-                    ui.notify("Waypoint Assist must be disabled before you can reset the list.", type='negative')
-
-            ui.button('Reset Waypoint List', on_click=reset_wp)
-
-        with ui.card().classes('col-span-2'):
-            ui.label('LOG').classes('text-h6')
-            log_display.classes('w-full')
-            log_display.push('Log messages will appear here.')
+            with ui.card():
+                ui.label('LOG').classes('text-h6')
+                log_display.classes('w-full')
+                log_display.push('Log messages will appear here.')
