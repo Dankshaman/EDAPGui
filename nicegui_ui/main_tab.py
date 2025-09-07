@@ -1,6 +1,6 @@
 from nicegui import ui
 
-def create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls, ship_data):
+def create_main_tab(ed_ap, log_container, assist_checkboxes, ship_controls, ship_data):
     with ui.grid(columns=3):
         with ui.card():
             ui.label('MODE').classes('text-h6')
@@ -75,5 +75,6 @@ def create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls, ship_d
 
             with ui.card():
                 ui.label('LOG').classes('text-h6')
-                log_display.classes('w-full')
-                log_display.push('Log messages will appear here.')
+                log_container['log'] = ui.log(max_lines=100).classes('w-full')
+                for message in log_container['history']:
+                    log_container['log'].push(message)
