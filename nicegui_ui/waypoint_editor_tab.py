@@ -173,10 +173,6 @@ def create_waypoint_editor_tab(ed_waypoint):
                 ui.button('Open', on_click=lambda: dialog.submit(file_select.value if file_select else None))
                 ui.button('Cancel', on_click=dialog.close)
 
-    result = await open_file_dialog
-    if result:
-        filepath = os.path.join(WAYPOINTS_DIR, result)
-        load_file(filepath)
 
     def handle_upload(e: ui.upload_event_args, is_csv: bool = False):
         if is_csv:
