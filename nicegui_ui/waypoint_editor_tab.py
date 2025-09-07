@@ -422,16 +422,9 @@ def create_waypoint_editor_tab(ed_waypoint):
 
                 wp = next((wp for wp in internal_waypoints if wp.name == row_name), None)
                 if wp:
-                    old_name = wp.name
                     setattr(wp, column, new_value)
 
-                    if column == 'name':
-                        for row in waypoints_table.rows:
-                            if row['name'] == old_name:
-                                row['name'] = new_value
-                                break
-
-                waypoints_table.update()
+                update_waypoints_table()
 
             waypoints_table.on('cell-updated', handle_cell_update)
             waypoints_table.on('selection', update_commodity_tables)
