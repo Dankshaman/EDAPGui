@@ -14,6 +14,7 @@ from ED_AP import EDAutopilot
 from datetime import datetime
 import json
 import os
+import collections
 
 # App state
 app_state = {
@@ -75,7 +76,8 @@ load_ocr_calibration_data()
 
 
 # Centralized log display
-log_display = ui.log(max_lines=20)
+log_history = collections.deque(maxlen=100)
+log_container = {'log': None, 'history': log_history}
 
 # Centralized status label
 status_label = ui.label("Status: Idle")
@@ -88,10 +90,15 @@ def callback(msg, body=None):
     """Callback function to handle messages from EDAutopilot."""
     if msg == 'log' or msg == 'log+vce':
         message = datetime.now().strftime("%H:%M:%S: ") + body
-        log_display.push(message)
+        log_container['history'].append(message)
+        if log_container['log']:
+            log_container['log'].push(message)
     elif msg == 'statusline':
         status_label.set_text("Status: " + body)
-        log_display.push(f"Status update: {body}")
+        message = f"Status update: {body}"
+        log_container['history'].append(message)
+        if log_container['log']:
+            log_container['log'].push(message)
     elif msg == 'fsd_stop':
         if 'FSD Route Assist' in assist_checkboxes: assist_checkboxes['FSD Route Assist'].value = False
     elif msg == 'sc_stop':
@@ -137,7 +144,7 @@ ship_data = {
 def index_page() -> None:
     with theme.frame('Main', status_label=status_label):
         ship_controls = {}
-        create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls, ship_data)
+        create_main_tab(ed_ap, log_container, assist_checkboxes, ship_controls, ship_data)
 
 @ui.page('/settings')
 def settings_page() -> None:
