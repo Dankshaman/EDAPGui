@@ -16,7 +16,7 @@ def frame(navtitle: str, status_label: ui.label):
         with ui.column():
             menu()
 
-    with ui.column().classes('absolute-center items-center h-screen no-wrap p-9 w-full'):
+    with ui.column().classes('absolute-center items-center min-h-screen no-wrap p-9 pb-32 w-full'):
         yield
 
     with ui.footer(value=True) as footer:
