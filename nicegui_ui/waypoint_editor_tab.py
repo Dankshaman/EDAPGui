@@ -13,8 +13,7 @@ class NiceGuiShoppingItem:
         self.quantity = quantity
 
 class NiceGuiWaypoint:
-    def __init__(self, name="", system_name="", station_name=""):
-        self.name = name
+    def __init__(self, system_name="", station_name=""):
         self.system_name = system_name
         self.station_name = station_name
         self.galaxy_bookmark_type = ""
@@ -39,18 +38,70 @@ def create_waypoint_editor_tab(ed_waypoint):
 
     os.makedirs(WAYPOINTS_DIR, exist_ok=True)
 
-    # --- DATA CONVERSION LOGIC ---
-    def populate_internal_waypoints():
+    # --- UI ELEMENT FORWARD DECLARATIONS ---
+    waypoints_table = None
+    buy_commodities_table = None
+    sell_commodities_table = None
+    waypoint_options_card = None
+    gbt_input, gbn_input, sbt_input, sbn_input = None, None, None, None
+    ucc_check, fct_check, sm_check, comment_area = None, None, None, None
+
+    # --- UI UPDATE LOGIC ---
+    def update_waypoints_table():
+        if not waypoints_table: return
+        waypoints_table.rows = [
+            {
+                'id': i,
+                'system_name': wp.system_name,
+                'station_name': wp.station_name,
+                'skip': wp.skip,
+                'completed': wp.completed,
+            } for i, wp in enumerate(internal_waypoints)
+        ]
+        waypoints_table.update()
+
+    async def update_commodity_tables():
+        if not waypoints_table: return
+        selection = await waypoints_table.get_selected_rows()
+        if not selection:
+            if buy_commodities_table: buy_commodities_table.rows = []
+            if sell_commodities_table: sell_commodities_table.rows = []
+            if waypoint_options_card: waypoint_options_card.visible = False
+        else:
+            if waypoint_options_card: waypoint_options_card.visible = True
+            selected_id = selection[0]['id']
+            wp = internal_waypoints[selected_id]
+
+            gbt_input.value = wp.galaxy_bookmark_type
+            gbn_input.value = wp.galaxy_bookmark_number
+            sbt_input.value = wp.system_bookmark_type
+            sbn_input.value = wp.system_bookmark_number
+            ucc_check.value = wp.update_commodity_count
+            fct_check.value = wp.fleet_carrier_transfer
+            sm_check.value = wp.scan_missions
+            comment_area.value = wp.comment
+
+            if buy_commodities_table: buy_commodities_table.rows = [{'name': item.name, 'quantity': item.quantity} for item in wp.buy_commodities]
+            if sell_commodities_table: sell_commodities_table.rows = [{'name': item.name, 'quantity': item.quantity} for item in wp.sell_commodities]
+
+        if buy_commodities_table: buy_commodities_table.update()
+        if sell_commodities_table: sell_commodities_table.update()
+        if waypoint_options_card: waypoint_options_card.update()
+
+    # --- DATA CONVERSION & EVENT HANDLERS ---
+    async def populate_internal_waypoints():
         nonlocal internal_waypoints
         internal_waypoints = []
         raw_waypoints = ed_waypoint.waypoints
         if not isinstance(raw_waypoints, dict):
             return
 
-        for key, value in raw_waypoints.items():
+        sorted_waypoints = sorted(raw_waypoints.items(), key=lambda item: str(item[0]))
+
+        for key, value in sorted_waypoints:
             if key == "GlobalShoppingList":
                 continue
-            wp = NiceGuiWaypoint(name=key)
+            wp = NiceGuiWaypoint()
             wp.system_name = value.get('SystemName', '')
             wp.station_name = value.get('StationName', '')
             wp.galaxy_bookmark_type = value.get('GalaxyBookmarkType', '')
@@ -67,7 +118,7 @@ def create_waypoint_editor_tab(ed_waypoint):
             wp.sell_commodities = [NiceGuiShoppingItem(k, v) for k, v in value.get('SellCommodities', {}).items()]
             internal_waypoints.append(wp)
         update_waypoints_table()
-        update_commodity_tables()
+        await update_commodity_tables()
 
     def convert_to_raw_waypoints():
         raw_waypoints = {}
@@ -91,74 +142,24 @@ def create_waypoint_editor_tab(ed_waypoint):
                 'BuyCommodities': {item.name: item.quantity for item in wp.buy_commodities},
                 'SellCommodities': {item.name: item.quantity for item in wp.sell_commodities}
             }
-            raw_waypoints[wp.name or str(i)] = raw_wp
+            raw_waypoints[str(i)] = raw_wp
         return raw_waypoints
 
-    # --- UI UPDATE LOGIC (pre-declare for use in handlers) ---
-    waypoints_table = None
-    buy_commodities_table = None
-    sell_commodities_table = None
-    waypoint_options_card = None
-    gbt_input, gbn_input, sbt_input, sbn_input = None, None, None, None
-    ucc_check, fct_check, sm_check, comment_area = None, None, None, None
-
-    def update_waypoints_table():
-        if not waypoints_table: return
-        waypoints_table.rows = [
-            {
-                'name': wp.name,
-                'system_name': wp.system_name,
-                'station_name': wp.station_name,
-                'skip': wp.skip,
-                'completed': wp.completed,
-            } for wp in internal_waypoints
-        ]
-        waypoints_table.update()
-
-    async def update_commodity_tables():
-        if not waypoints_table: return
-        selection = await waypoints_table.get_selected_rows()
-        if not selection:
-            if buy_commodities_table: buy_commodities_table.rows = []
-            if sell_commodities_table: sell_commodities_table.rows = []
-            if waypoint_options_card: waypoint_options_card.visible = False
-        else:
-            if waypoint_options_card: waypoint_options_card.visible = True
-            selected_name = selection[0]['name']
-            wp = next((wp for wp in internal_waypoints if wp.name == selected_name), None)
-            if wp:
-                gbt_input.value = wp.galaxy_bookmark_type
-                gbn_input.value = wp.galaxy_bookmark_number
-                sbt_input.value = wp.system_bookmark_type
-                sbn_input.value = wp.system_bookmark_number
-                ucc_check.value = wp.update_commodity_count
-                fct_check.value = wp.fleet_carrier_transfer
-                sm_check.value = wp.scan_missions
-                comment_area.value = wp.comment
-
-                if buy_commodities_table: buy_commodities_table.rows = [{'name': item.name, 'quantity': item.quantity} for item in wp.buy_commodities]
-                if sell_commodities_table: sell_commodities_table.rows = [{'name': item.name, 'quantity': item.quantity} for item in wp.sell_commodities]
-
-        if buy_commodities_table: buy_commodities_table.update()
-        if sell_commodities_table: sell_commodities_table.update()
-        if waypoint_options_card: waypoint_options_card.update()
-
-    # --- EVENT HANDLERS & LOGIC ---
-    def load_file(filepath):
+    async def load_file(filepath):
         if ed_waypoint.load_waypoint_file(filepath):
-            populate_internal_waypoints()
+            await populate_internal_waypoints()
             mesg_client.publish(LoadWaypointFileAction(filepath=filepath))
             ui.notify(f"Loaded waypoint file: {os.path.basename(filepath)}")
         else:
             ui.notify(f"Failed to load invalid waypoint file: {os.path.basename(filepath)}", type='negative')
 
-    def new_file():
+    async def new_file():
         nonlocal internal_waypoints
         internal_waypoints = []
         ed_waypoint.waypoints = {}
         ed_waypoint.filename = None
         update_waypoints_table()
-        update_commodity_tables()
+        await update_commodity_tables()
         ui.notify("New waypoint list created. Don't forget to save.")
 
     async def open_file_dialog():
@@ -181,9 +182,9 @@ def create_waypoint_editor_tab(ed_waypoint):
         result = await dialog
         if result:
             filepath = os.path.join(WAYPOINTS_DIR, result)
-            load_file(filepath)
+            await load_file(filepath)
 
-    def handle_upload(e: UploadEventArguments, is_csv: bool = False):
+    async def handle_upload(e: UploadEventArguments, is_csv: bool = False):
         if is_csv:
             try:
                 content = e.content.read().decode('utf-8')
@@ -191,7 +192,7 @@ def create_waypoint_editor_tab(ed_waypoint):
                 for row in reader:
                     system_name = row.get("System Name")
                     if system_name:
-                        new_waypoint = NiceGuiWaypoint(name=system_name, system_name=system_name)
+                        new_waypoint = NiceGuiWaypoint(system_name=system_name)
                         internal_waypoints.append(new_waypoint)
                 update_waypoints_table()
                 ui.notify(f"Imported waypoints from {e.name}")
@@ -204,7 +205,7 @@ def create_waypoint_editor_tab(ed_waypoint):
             content_bytes = e.content.read()
             with open(filepath, 'wb') as f:
                 f.write(content_bytes)
-            load_file(filepath)
+            await load_file(filepath)
         except Exception as ex:
             ui.notify(f"Error uploading file: {ex}", type='negative')
 
@@ -250,13 +251,11 @@ def create_waypoint_editor_tab(ed_waypoint):
                     if len(parts) >= 2:
                         from_waypoint.station_name = parts[0].strip()
                         from_waypoint.system_name = parts[1].strip()
-                        from_waypoint.name = from_waypoint.station_name or from_waypoint.system_name
                 elif clean_line.lower().startswith("to:"):
                     parts = clean_line[3:].strip().split('|')
                     if len(parts) >= 2:
                         to_waypoint.station_name = parts[0].strip()
                         to_waypoint.system_name = parts[1].strip()
-                        to_waypoint.name = to_waypoint.station_name or to_waypoint.system_name
                 elif clean_line.lower().startswith("buy"):
                     commodity = clean_line.split(maxsplit=1)[1].strip()
                     if from_buy: from_waypoint.buy_commodities.append(NiceGuiShoppingItem(commodity, 9999))
@@ -268,8 +267,8 @@ def create_waypoint_editor_tab(ed_waypoint):
                     else: to_waypoint.sell_commodities.append(NiceGuiShoppingItem(commodity, 9999))
                     from_sell = False
 
-            if from_waypoint.name: internal_waypoints.append(from_waypoint)
-            if to_waypoint.name: internal_waypoints.append(to_waypoint)
+            if from_waypoint.system_name: internal_waypoints.append(from_waypoint)
+            if to_waypoint.system_name: internal_waypoints.append(to_waypoint)
             update_waypoints_table()
             ui.notify("Inara route added.")
         except Exception as e:
@@ -289,11 +288,7 @@ def create_waypoint_editor_tab(ed_waypoint):
             add_inara_route(result)
 
     def add_waypoint():
-        i = 1
-        while f"New Waypoint {i}" in [wp.name for wp in internal_waypoints]:
-            i += 1
-        new_name = f"New Waypoint {i}"
-        new_waypoint = NiceGuiWaypoint(name=new_name, system_name="New System")
+        new_waypoint = NiceGuiWaypoint(system_name="New System")
         internal_waypoints.append(new_waypoint)
         update_waypoints_table()
 
@@ -302,74 +297,83 @@ def create_waypoint_editor_tab(ed_waypoint):
         if not selection:
             ui.notify("No waypoint selected.", type='negative')
             return
-        selected_name = selection[0]['name']
-        nonlocal internal_waypoints
-        internal_waypoints = [wp for wp in internal_waypoints if wp.name != selected_name]
+        selected_id = selection[0]['id']
+        del internal_waypoints[selected_id]
         waypoints_table.selected = []
         update_waypoints_table()
-        update_commodity_tables()
-        ui.notify(f"Waypoint '{selected_name}' deleted.")
+        await update_commodity_tables()
+        ui.notify("Waypoint deleted.")
 
     async def move_waypoint(direction):
         selection = await waypoints_table.get_selected_rows()
         if not selection:
             ui.notify("No waypoint selected.", type='negative')
             return
-        selected_name = selection[0]['name']
-        index = next((i for i, wp in enumerate(internal_waypoints) if wp.name == selected_name), -1)
-        if index != -1:
-            new_index = index
-            if direction == 'up' and index > 0:
-                new_index = index - 1
-                internal_waypoints.insert(new_index, internal_waypoints.pop(index))
-            elif direction == 'down' and index < len(internal_waypoints) - 1:
-                new_index = index + 1
-                internal_waypoints.insert(new_index, internal_waypoints.pop(index))
+        selected_id = selection[0]['id']
 
-            update_waypoints_table()
-            await ui.run_javascript(f'getElement({waypoints_table.id}).$props.selected = [getElement({waypoints_table.id}).$props.rows[{new_index}]]', respond=False)
+        new_index = selected_id
+        if direction == 'up' and selected_id > 0:
+            new_index = selected_id - 1
+            internal_waypoints.insert(new_index, internal_waypoints.pop(selected_id))
+        elif direction == 'down' and selected_id < len(internal_waypoints) - 1:
+            new_index = selected_id + 1
+            internal_waypoints.insert(new_index, internal_waypoints.pop(selected_id))
+
+        update_waypoints_table()
+        await ui.run_javascript(f'getElement({waypoints_table.id}).$props.selected = [getElement({waypoints_table.id}).$props.rows[{new_index}]]', respond=False)
 
     async def add_commodity(list_type):
         selection = await waypoints_table.get_selected_rows()
         if not selection:
             ui.notify("No waypoint selected.", type='negative')
             return
-        selected_name = selection[0]['name']
-        wp = next((wp for wp in internal_waypoints if wp.name == selected_name), None)
-        if wp:
-            with ui.dialog() as dialog, ui.card():
-                ui.label('Add Commodity').classes('text-h6')
-                commodity_select = ui.select(ALL_COMMODITIES, with_input=True, label="Commodity Name")
-                quantity_input = ui.number("Quantity", value=1, min=1)
-                ui.button('Add', on_click=lambda: dialog.submit({'name': commodity_select.value, 'quantity': quantity_input.value}))
+        selected_id = selection[0]['id']
+        wp = internal_waypoints[selected_id]
 
-            result = await dialog
-            if result and result.get('name'):
-                if list_type == 'buy':
-                    wp.buy_commodities.append(NiceGuiShoppingItem(result['name'], result['quantity']))
-                else:
-                    wp.sell_commodities.append(NiceGuiShoppingItem(result['name'], result['quantity']))
-                await update_commodity_tables()
+        with ui.dialog() as dialog, ui.card():
+            ui.label('Add Commodity').classes('text-h6')
+            commodity_select = ui.select(ALL_COMMODITIES, with_input=True, label="Commodity Name")
+            quantity_input = ui.number("Quantity", value=1, min=1)
+            ui.button('Add', on_click=lambda: dialog.submit({'name': commodity_select.value, 'quantity': quantity_input.value}))
+
+        result = await dialog
+        if result and result.get('name'):
+            if list_type == 'buy':
+                wp.buy_commodities.append(NiceGuiShoppingItem(result['name'], result['quantity']))
+            else:
+                wp.sell_commodities.append(NiceGuiShoppingItem(result['name'], result['quantity']))
+            await update_commodity_tables()
 
     async def delete_commodity(list_type):
         selection = await waypoints_table.get_selected_rows()
         if not selection:
             ui.notify("No waypoint selected.", type='negative')
             return
-        selected_name = selection[0]['name']
-        wp = next((wp for wp in internal_waypoints if wp.name == selected_name), None)
-        if wp:
-            table_to_check = buy_commodities_table if list_type == 'buy' else sell_commodities_table
-            commodity_selection = await table_to_check.get_selected_rows()
-            if commodity_selection:
-                commodity_name = commodity_selection[0]['name']
-                if list_type == 'buy':
-                    wp.buy_commodities = [item for item in wp.buy_commodities if item.name != commodity_name]
-                else:
-                    wp.sell_commodities = [item for item in wp.sell_commodities if item.name != commodity_name]
-                await update_commodity_tables()
+        selected_id = selection[0]['id']
+        wp = internal_waypoints[selected_id]
+
+        table_to_check = buy_commodities_table if list_type == 'buy' else sell_commodities_table
+        commodity_selection = await table_to_check.get_selected_rows()
+        if commodity_selection:
+            commodity_name = commodity_selection[0]['name']
+            if list_type == 'buy':
+                wp.buy_commodities = [item for item in wp.buy_commodities if item.name != commodity_name]
             else:
-                ui.notify("No commodity selected.", type='negative')
+                wp.sell_commodities = [item for item in wp.sell_commodities if item.name != commodity_name]
+            await update_commodity_tables()
+        else:
+            ui.notify("No commodity selected.", type='negative')
+
+    def handle_cell_update(event):
+        args = event.args
+        row_id = args['id'] # This is the index
+        column = args['column']
+        new_value = args['value']
+
+        wp = internal_waypoints[row_id]
+        setattr(wp, column, new_value)
+
+        update_waypoints_table()
 
     # --- UI LAYOUT ---
     with ui.row():
@@ -384,20 +388,19 @@ def create_waypoint_editor_tab(ed_waypoint):
     with ui.row().classes('w-full'):
         with ui.card().classes('flex-grow'):
             waypoints_columns = [
-                {'name': 'name', 'label': 'Name', 'field': 'name', 'sortable': True, 'align': 'left'},
                 {'name': 'system_name', 'label': 'System Name', 'field': 'system_name', 'sortable': True, 'align': 'left'},
                 {'name': 'station_name', 'label': 'Station Name', 'field': 'station_name', 'sortable': True, 'align': 'left'},
                 {'name': 'skip', 'label': 'Skip', 'field': 'skip'},
                 {'name': 'completed', 'label': 'Completed', 'field': 'completed'},
             ]
-            waypoints_table = ui.table(columns=waypoints_columns, rows=[], row_key='name', selection='single').classes('w-full h-64')
+            waypoints_table = ui.table(columns=waypoints_columns, rows=[], row_key='id', selection='single').classes('w-full h-64')
 
-            for col in ['name', 'system_name', 'station_name']:
+            for col in ['system_name', 'station_name']:
                 waypoints_table.add_slot(f'body-cell-{col}', f'''
                     <q-td :props="props">
                         {{{{ props.row.{col} }}}}
                         <q-popup-edit v-model="props.row.{col}" v-slot="scope"
-                            @save="(val, initialValue) => $parent.$emit('cell-updated', {{ name: props.row.name, column: '{col}', value: val }})">
+                            @save="(val, initialValue) => $parent.$emit('cell-updated', {{ id: props.row.id, column: '{col}', value: val }})">
                             <q-input v-model="scope.value" dense autofocus counter @keyup.enter="scope.set" />
                         </q-popup-edit>
                     </q-td>
@@ -405,26 +408,14 @@ def create_waypoint_editor_tab(ed_waypoint):
 
             waypoints_table.add_slot('body-cell-skip', '''
                 <q-td :props="props">
-                    <q-checkbox v-model="props.row.skip" @update:model-value="(val) => $parent.$emit('cell-updated', { name: props.row.name, column: 'skip', value: val })"/>
+                    <q-checkbox v-model="props.row.skip" @update:model-value="(val) => $parent.$emit('cell-updated', { id: props.row.id, column: 'skip', value: val })"/>
                 </q-td>
             ''')
             waypoints_table.add_slot('body-cell-completed', '''
                 <q-td :props="props">
-                    <q-checkbox v-model="props.row.completed" @update:model-value="(val) => $parent.$emit('cell-updated', { name: props.row.name, column: 'completed', value: val })"/>
+                    <q-checkbox v-model="props.row.completed" @update:model-value="(val) => $parent.$emit('cell-updated', { id: props.row.id, column: 'completed', value: val })"/>
                 </q-td>
             ''')
-
-            def handle_cell_update(event):
-                args = event.args
-                row_name = args['name']
-                column = args['column']
-                new_value = args['value']
-
-                wp = next((wp for wp in internal_waypoints if wp.name == row_name), None)
-                if wp:
-                    setattr(wp, column, new_value)
-
-                update_waypoints_table()
 
             waypoints_table.on('cell-updated', handle_cell_update)
             waypoints_table.on('selection', update_commodity_tables)
@@ -453,16 +444,16 @@ def create_waypoint_editor_tab(ed_waypoint):
                 def connect_options_to_data(e):
                     selection = waypoints_table.selected
                     if not selection: return
-                    wp = next((wp for wp in internal_waypoints if wp.name == selection[0]['name']), None)
-                    if wp:
-                        wp.galaxy_bookmark_type = gbt_input.value
-                        wp.galaxy_bookmark_number = gbn_input.value
-                        wp.system_bookmark_type = sbt_input.value
-                        wp.system_bookmark_number = sbn_input.value
-                        wp.update_commodity_count = ucc_check.value
-                        wp.fleet_carrier_transfer = fct_check.value
-                        wp.scan_missions = sm_check.value
-                        wp.comment = comment_area.value
+                    wp = internal_waypoints[selection[0]['id']]
+
+                    wp.galaxy_bookmark_type = gbt_input.value
+                    wp.galaxy_bookmark_number = gbn_input.value
+                    wp.system_bookmark_type = sbt_input.value
+                    wp.system_bookmark_number = sbn_input.value
+                    wp.update_commodity_count = ucc_check.value
+                    wp.fleet_carrier_transfer = fct_check.value
+                    wp.scan_missions = sm_check.value
+                    wp.comment = comment_area.value
 
                 for ctrl in [gbt_input, gbn_input, sbt_input, sbn_input, ucc_check, fct_check, sm_check, comment_area]:
                     ctrl.on('update:model-value', connect_options_to_data)
@@ -490,5 +481,4 @@ def create_waypoint_editor_tab(ed_waypoint):
                 ui.button('Add', on_click=lambda: add_commodity('sell'))
                 ui.button('Del', on_click=lambda: delete_commodity('sell'))
 
-    # Initial population
-    populate_internal_waypoints()
+    ui.timer(0.1, populate_internal_waypoints, once=True)
