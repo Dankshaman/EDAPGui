@@ -841,6 +841,8 @@ class EDAutopilot:
 
         # Update journal flag.
         self.jn.ship_state()['interdicted'] = False  # reset flag
+        self.keys.send('SetSpeed50')
+        self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
         return True
 
     def get_nav_offset(self, scr_reg):
@@ -1612,8 +1614,6 @@ class EDAutopilot:
 
             # Always check for critical events at the start of the loop
             if self.interdiction_check():
-                self.keys.send('SetSpeed50')
-                self.status.wait_for_flag_on(FlagsSupercruise, timeout=30)
                 continue  # Restart loop to re-evaluate
 
             # Get sensor data
