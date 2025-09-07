@@ -43,38 +43,37 @@ def create_main_tab(ed_ap, log_container, assist_checkboxes, ship_controls, ship
             ui.button('Test Pitch Rate', on_click=ed_ap.ship_tst_pitch)
             ui.button('Test Yaw Rate', on_click=ed_ap.ship_tst_yaw)
 
-        with ui.column():
-            with ui.card():
-                ui.label('Waypoints').classes('text-h6')
+        with ui.card():
+            ui.label('Waypoints').classes('text-h6')
 
-                def handle_wp_upload(e):
-                    try:
-                        content = e.content.read().decode('utf-8')
-                        import tempfile
-                        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
-                            f.write(content)
-                            filepath = f.name
+            def handle_wp_upload(e):
+                try:
+                    content = e.content.read().decode('utf-8')
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+                        f.write(content)
+                        filepath = f.name
 
-                        if ed_ap.waypoint.load_waypoint_file(filepath):
-                            ui.notify(f"Loaded waypoint file: {e.name}")
-                        else:
-                            ui.notify(f"Failed to load waypoint file: {e.name}", type='negative')
-                    except Exception as ex:
-                        ui.notify(f"Error: {ex}", type='negative')
-
-                ui.upload(on_upload=handle_wp_upload, auto_upload=True, label="Load Waypoint File").props('icon=folder')
-
-                def reset_wp():
-                    if not ed_ap.waypoint_assist_enabled:
-                        ed_ap.waypoint.mark_all_waypoints_not_complete()
-                        ui.notify("Waypoint list reset.")
+                    if ed_ap.waypoint.load_waypoint_file(filepath):
+                        ui.notify(f"Loaded waypoint file: {e.name}")
                     else:
-                        ui.notify("Waypoint Assist must be disabled before you can reset the list.", type='negative')
+                        ui.notify(f"Failed to load waypoint file: {e.name}", type='negative')
+                except Exception as ex:
+                    ui.notify(f"Error: {ex}", type='negative')
 
-                ui.button('Reset Waypoint List', on_click=reset_wp)
+            ui.upload(on_upload=handle_wp_upload, auto_upload=True, label="Load Waypoint File").props('icon=folder')
 
-            with ui.card():
-                ui.label('LOG').classes('text-h6')
-                log_container['log'] = ui.log(max_lines=100).classes('w-full')
-                for message in log_container['history']:
-                    log_container['log'].push(message)
+            def reset_wp():
+                if not ed_ap.waypoint_assist_enabled:
+                    ed_ap.waypoint.mark_all_waypoints_not_complete()
+                    ui.notify("Waypoint list reset.")
+                else:
+                    ui.notify("Waypoint Assist must be disabled before you can reset the list.", type='negative')
+
+            ui.button('Reset Waypoint List', on_click=reset_wp)
+
+    with ui.card().classes('w-full'):
+        ui.label('LOG').classes('text-h6')
+        log_container['log'] = ui.log(max_lines=100).classes('w-full')
+        for message in log_container['history']:
+            log_container['log'].push(message)
