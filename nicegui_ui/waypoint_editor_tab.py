@@ -432,7 +432,7 @@ def create_waypoint_editor_tab(ed_waypoint):
             ui.button('Del', on_click=delete_waypoint).props('icon=delete')
 
     with ui.row().classes('w-full'):
-        with ui.card().classes('w-full').bind_visibility_from(waypoints_table, 'selected', value=lambda s: len(s) > 0) as waypoint_options_card:
+        with ui.card().classes('w-full') as waypoint_options_card:
             with ui.expansion('Waypoint Options', icon='settings').classes('w-full'):
                 with ui.row():
                     gbt_input = ui.input('Galaxy Bookmark Type')
