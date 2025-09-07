@@ -188,4 +188,4 @@ def load_server_config():
         return config['server']
 
 server_config = load_server_config()
-ui.run(title='EDAP', host=server_config['host'], port=server_config['port'])
+ui.run(title='EDAP', host=server_config['host'], port=server_config['port'], dark=True)
