@@ -77,9 +77,6 @@ load_ocr_calibration_data()
 # Centralized log display
 log_display = ui.log(max_lines=20)
 
-# Centralized status label
-status_label = ui.label("Status: Idle")
-
 # UI elements that need to be updated by callbacks
 assist_checkboxes = {}
 ship_data = {}
@@ -90,7 +87,6 @@ def callback(msg, body=None):
         message = datetime.now().strftime("%H:%M:%S: ") + body
         log_display.push(message)
     elif msg == 'statusline':
-        status_label.set_text("Status: " + body)
         log_display.push(f"Status update: {body}")
     elif msg == 'fsd_stop':
         if 'FSD Route Assist' in assist_checkboxes: assist_checkboxes['FSD Route Assist'].value = False
@@ -135,33 +131,33 @@ ship_data = {
 
 @ui.page('/')
 def index_page() -> None:
-    with theme.frame('Main', status_label=status_label):
+    with theme.frame('Main'):
         ship_controls = {}
         create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls, ship_data)
 
 @ui.page('/settings')
 def settings_page() -> None:
-    with theme.frame('Settings', status_label=status_label):
+    with theme.frame('Settings'):
         create_settings_tab(ed_ap)
 
 @ui.page('/debug')
 def debug_page() -> None:
-    with theme.frame('Debug/Test', status_label=status_label):
+    with theme.frame('Debug/Test'):
         create_debug_tab(ed_ap)
 
 @ui.page('/calibration')
 def calibration_page() -> None:
-    with theme.frame('Calibration', status_label=status_label):
+    with theme.frame('Calibration'):
         create_calibration_tab(app_state, ed_ap)
 
 @ui.page('/waypoint-editor')
 def waypoint_editor_page() -> None:
-    with theme.frame('Waypoint Editor', status_label=status_label):
+    with theme.frame('Waypoint Editor'):
         create_waypoint_editor_tab(ed_ap.waypoint)
 
 @ui.page('/wing-mining')
 def wing_mining_page() -> None:
-    with theme.frame('Wing Mining', status_label=status_label):
+    with theme.frame('Wing Mining'):
         create_wing_mining_tab(ed_ap)
 
 def load_server_config():
