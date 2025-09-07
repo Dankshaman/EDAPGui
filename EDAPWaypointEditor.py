@@ -135,7 +135,40 @@ ALL_COMMODITIES = [
     "Biowaste", "Chemical Waste", "Scrap", "Toxic Waste",
     "Battle Weapons", "Landmines", "Non Lethal Weapons", "Personal Weapons", "Reactive Armour"
 ]
-ALL_COMMODITIES.sort()
+RARE_COMMODITIES = [
+    "Soontill Relics", "Sothis Crystalline Gold", "Jaques Quinentian Still", "Personal Gifts", "Kamitra Cigars",
+    "Apa Vietii", "Classified Experimental Equipment", "Wulpa Hyperbore Systems", "Holva Duelling Blades",
+    "Toxandji Virocide", "Wheemete Wheat Cakes", "Eshu Umbrellas", "Geawen Dance Dust", "Mukusubii Chitin-os",
+    "Yaso Kondi Leaf", "Giant Irukama Snails", "Karetii Couture", "Volkhab Bee Drones", "Burnham Bile Distillate",
+    "Kinago Violins", "Haiden Black Brew", "Wuthielo Ku Froth", "Kamorin Historic Weapons", "Karsuki Locusts",
+    "Goman Yaupon Coffee", "Alacarakmo Skin Art", "Rapa Bao Snake Skins", "Anduliga Fire Works",
+    "Delta Phoenicis Palms", "Deuringas Truffles", "Jaroua Rice", "Buckyball Beer Mats", "Belalans Ray Leather",
+    "Njangari Saddles", "Ochoeng Chillies", "Sanuma Decorative Meat", "Tiegfries Synth Silk", "Harma Silver Sea Rum",
+    "Rajukru Multi-Stoves", "Damna Carapaces", "HIP 10175 Bush Meat", "Hip Organophosphates", "Kongga Ale",
+    "Kachirigin Filter Leeches", "HIP 118311 Swarm", "HIP Proto-Squid", "Eden Apples Of Aerial", "Nguna Modern Antiques",
+    "Albino Quechua Mammoth Meat", "Vanayequi Ceratomorpha Fur", "Onionhead Beta Strain", "Ceremonial Heike Tea",
+    "Onionhead Alpha Strain", "Any Na Coffee", "Thrutis Cream", "Aepyornis Egg", "Ceti Rabbits", "Jotun Mookah",
+    "HR 7221 Wheat", "Lyrae Weed", "Ngadandari Fire Opals", "Orrerian Vicious Brew", "Eleu Thermals",
+    "Esuseku Caviar", "Vidavantian Lace", "Baltah'sine Vacuum Krill", "Lavian Brandy", "Rusani Old Smokey",
+    "Diso Ma Corn", "Leestian Evil Juice", "Banki Amphibious Leather", "Uszaian Tree Grub", "Galactic Travel Guide",
+    "Havasupai Dream Catcher", "Baked Greebles", "Uzumoku Low-G Wings", "Borasetani Pathogenetics", "Azure Milk",
+    "Arouca Conventual Sweets", "Mechucos High Tea", "Alya Body Soap", "Koro Kung Pellets", "Lucan Onionhead",
+    "Duradrives", "Helvetitj Pearls", "Giant Verrix", "Utgaroar Millennial Eggs", "Ultra-Compact Processor Prototypes",
+    "Nanomedicines", "Shan's Charis Orchid", "Momus Bog Spaniel", "Crystalline Spheres", "Mokojing Beast Feast",
+    "Wolf Fesh", "Coquim Spongiform Victuals", "CD-75 Kitten Brand Coffee", "Saxon Wine", "Tarach Spice",
+    "Onionhead", "Tanmark Tranquil Tea", "Gilya Signature Weapons", "Chateau De Aegaeon",
+    "Neritus Berries", "Witchhaul Kobe Beef", "Non Euclidian Exotanks", "Fujin Tea", "Chameleon Cloth",
+    "Ethgreze Tea Buds", "Leathery Eggs", "Live Hecate Sea Worms", "LTT Hyper Sweet", "Honesty Pills",
+    "Cherbones Blood Crystals", "Gerasian Gueuze Beer", "V Herculis Body Rub", "Eranin Pearl Whisky",
+    "Medb Starlube", "Crom Silver Fesh", "Motrona Experience Jelly", "Chi Eridani Marine Paste",
+    "AZ Cancri Formula 42", "The Waters Of Shintara", "Jaradharre Puzzle Box", "Terra Mater Blood Bores",
+    "Tauri Chimes", "Xihe Biomorphic Companions", "Vega Slimweed", "Aganippe Rush", "Bast Snake Gin",
+    "Altairian Skin", "Master Chefs", "Mulachi Giant Fungus", "Pavonis Ear Grubs", "Tiolce Waste2Paste Units",
+    "Void Extract Coffee", "Zeessze Ant Grub Glue", "Indi Bourbon", "Pantaa Prayer Sticks",
+    "Ophiuch Exino Artefacts", "Centauri Mega Gin", "The Hutton Mug"
+]
+ALL_COMMODITIES.extend(RARE_COMMODITIES)
+ALL_COMMODITIES = sorted(list(set(ALL_COMMODITIES)))
 
 class ShoppingItem:
     def __init__(self, name="", quantity=0):
