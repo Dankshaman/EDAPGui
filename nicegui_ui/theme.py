@@ -3,7 +3,7 @@ from nicegui import ui
 from menu import menu
 
 @contextmanager
-def frame(navtitle: str, status_label: ui.label):
+def frame(navtitle: str):
     """Custom page frame to share the same styling and behavior across all pages."""
     ui.colors(primary='#a13900', secondary='#FB8C00', accent='#111B1E', positive='#FB8C00')
     with ui.header().classes(replace='row items-center') as header:
@@ -18,9 +18,3 @@ def frame(navtitle: str, status_label: ui.label):
 
     with ui.column().classes('absolute-center items-center min-h-screen no-wrap p-9 pb-32 w-full'):
         yield
-
-    with ui.footer(value=True) as footer:
-        status_label.classes('w-full text-center')
-
-    with ui.page_sticky(position='bottom-right', x_offset=20, y_offset=20):
-        ui.button(on_click=footer.toggle, icon='contact_support').props('fab')
