@@ -477,15 +477,20 @@ class WingMining:
             matched_prefix = self.ap.ocr.find_fuzzy_pattern_in_text(details_text, mission_name_patterns)
             if matched_prefix:
                 try:
-                    if "units of" in details_text.lower():
-                        parts = details_text.lower().split("units of")
+                    details_lower = details_text.lower()
+                    # Enhanced check for "units of"
+                    keyword_match = re.search(r'un.ts? of', details_lower)
+
+                    if keyword_match:
+                        # Split based on the match
+                        parts = [details_lower[:keyword_match.start()], details_lower[keyword_match.end():]]
+
                         tonnage_str = parts[0].strip().split()[-1]
                         tonnage = self.ap.stn_svcs_in_ship._parse_number_with_ocr_errors(tonnage_str)
                         
                         commodity_candidate = parts[1].strip().split()[0]
                         
                         # Fuzzy match commodity
-                        # Using string_similarity directly as we are comparing a candidate word with a known commodity
                         if self.ap.ocr.string_similarity(commodity_candidate.upper(), target_commodity.upper()) > 0.7 and tonnage == target_tonnage:
                             logger.info(f"Found matching mission to turn in: {details_text}")
                             return True
