@@ -164,4 +164,28 @@ def wing_mining_page() -> None:
     with theme.frame('Wing Mining', status_label=status_label):
         create_wing_mining_tab(ed_ap)
 
-ui.run(title='EDAP')
+def load_server_config():
+    config_file = 'configs/nicegui.json'
+    defaults = {'server': {'host': '0.0.0.0', 'port': 8080}}
+    if not os.path.exists(config_file):
+        with open(config_file, 'w') as f:
+            json.dump(defaults, f, indent=4)
+        return defaults['server']
+    else:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+        # Merge with defaults to ensure all keys are present
+        if 'server' not in config:
+            config['server'] = defaults['server']
+        for key, value in defaults['server'].items():
+            if key not in config['server']:
+                config['server'][key] = value
+
+        # Save back the updated config
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=4)
+
+        return config['server']
+
+server_config = load_server_config()
+ui.run(title='EDAP', host=server_config['host'], port=server_config['port'])
