@@ -398,7 +398,7 @@ def create_waypoint_editor_tab(ed_waypoint):
                 {'name': 'skip', 'label': 'Skip', 'field': 'skip'},
                 {'name': 'completed', 'label': 'Completed', 'field': 'completed'},
             ]
-            waypoints_table = ui.table(columns=waypoints_columns, rows=[], row_key='id', selection='single').classes('w-full h-64')
+            waypoints_table = ui.table(columns=waypoints_columns, rows=[], row_key='id', selection='single').classes('w-full h-64').props('hide-selected-banner')
 
             for col in ['system_name', 'station_name']:
                 waypoints_table.add_slot(f'body-cell-{col}', f'''
@@ -472,7 +472,7 @@ def create_waypoint_editor_tab(ed_waypoint):
                 {'name': 'name', 'label': 'Name', 'field': 'name', 'align': 'left'},
                 {'name': 'quantity', 'label': 'Quantity', 'field': 'quantity', 'align': 'right'}
             ]
-            buy_commodities_table = ui.table(columns=buy_commodities_columns, rows=[], row_key='name', selection='single').classes('w-full h-32')
+            buy_commodities_table = ui.table(columns=buy_commodities_columns, rows=[], row_key='name', selection='single').classes('w-full h-32').props('hide-selected-banner')
             with ui.row():
                 ui.button('Add', on_click=lambda: add_commodity('buy'))
                 ui.button('Del', on_click=lambda: delete_commodity('buy'))
@@ -483,7 +483,7 @@ def create_waypoint_editor_tab(ed_waypoint):
                 {'name': 'name', 'label': 'Name', 'field': 'name', 'align': 'left'},
                 {'name': 'quantity', 'label': 'Quantity', 'field': 'quantity', 'align': 'right'}
             ]
-            sell_commodities_table = ui.table(columns=sell_commodities_columns, rows=[], row_key='name', selection='single').classes('w-full h-32')
+            sell_commodities_table = ui.table(columns=sell_commodities_columns, rows=[], row_key='name', selection='single').classes('w-full h-32').props('hide-selected-banner')
             with ui.row():
                 ui.button('Add', on_click=lambda: add_commodity('sell'))
                 ui.button('Del', on_click=lambda: delete_commodity('sell'))
