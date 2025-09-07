@@ -478,11 +478,11 @@ class WingMining:
             if matched_prefix:
                 try:
                     details_lower = details_text.lower()
-                    # Enhanced check for "units of"
-                    keyword_match = re.search(r'un.ts? of', details_lower)
+                    # Use regex to find the keyword robustly, allowing for OCR errors (e.g., 5 for s, 0 for o)
+                    keyword_match = re.search(r'un.t[s5]? ?[o0]f', details_lower)
 
                     if keyword_match:
-                        # Split based on the match
+                        # Split the string around the found keyword
                         parts = [details_lower[:keyword_match.start()], details_lower[keyword_match.end():]]
 
                         tonnage_str = parts[0].strip().split()[-1]
