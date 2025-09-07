@@ -136,28 +136,8 @@ ship_data = {
 @ui.page('/')
 def index_page() -> None:
     with theme.frame('Main', status_label=status_label):
-        # Create checkboxes here so they can be accessed by the callback
-        assist_checkboxes['FSD Route Assist'] = ui.checkbox('FSD Route Assist', on_change=lambda e: ed_ap.set_fsd_assist(e.value))
-        assist_checkboxes['Supercruise Assist'] = ui.checkbox('Supercruise Assist', on_change=lambda e: ed_ap.set_sc_assist(e.value))
-        assist_checkboxes['Waypoint Assist'] = ui.checkbox('Waypoint Assist', on_change=lambda e: ed_ap.set_waypoint_assist(e.value))
-        assist_checkboxes['Robigo Assist'] = ui.checkbox('Robigo Assist', on_change=lambda e: ed_ap.set_robigo_assist(e.value))
-        assist_checkboxes['AFK Combat Assist'] = ui.checkbox('AFK Combat Assist', on_change=lambda e: ed_ap.set_afk_combat_assist(e.value))
-        assist_checkboxes['DSS Assist'] = ui.checkbox('DSS Assist', on_change=lambda e: ed_ap.set_dss_assist(e.value))
-        assist_checkboxes['Fleet Carrier Assist'] = ui.checkbox('Fleet Carrier Assist', on_change=lambda e: ed_ap.set_fc_assist(e.value))
-        assist_checkboxes['Wing Mining Assist'] = ui.checkbox('Wing Mining Assist', on_change=lambda e: ed_ap.set_wing_mining_assist(e.value))
-
-        # Create ship controls here and bind them to the ship_data dictionary
-        ship_controls = {
-            'RollRate': ui.number('RollRate').bind_value(ship_data, 'rollrate').on('change', lambda e: setattr(ed_ap, 'rollrate', e.value)),
-            'PitchRate': ui.number('PitchRate').bind_value(ship_data, 'pitchrate').on('change', lambda e: setattr(ed_ap, 'pitchrate', e.value)),
-            'YawRate': ui.number('YawRate').bind_value(ship_data, 'yawrate').on('change', lambda e: setattr(ed_ap, 'yawrate', e.value)),
-            'SunPitchUp+Time': ui.number('SunPitchUp+Time').bind_value(ship_data, 'sunpitchuptime').on('change', lambda e: setattr(ed_ap, 'sunpitchuptime', e.value)),
-            'AutoDockBoost': ui.checkbox('Auto-Dock Boost').bind_value(ship_data, 'autodock_boost').on('change', lambda e: setattr(ed_ap, 'autodock_boost', e.value)),
-            'AutoDockForwardTime': ui.number('Auto-Dock Fwd Time').bind_value(ship_data, 'autodock_forward_time').on('change', lambda e: setattr(ed_ap, 'autodock_forward_time', e.value)),
-            'AutoDockDelayTime': ui.number('Auto-Dock Delay').bind_value(ship_data, 'autodock_delay_time').on('change', lambda e: setattr(ed_ap, 'autodock_delay_time', e.value)),
-        }
-
-        create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls)
+        ship_controls = {}
+        create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls, ship_data)
 
 @ui.page('/settings')
 def settings_page() -> None:

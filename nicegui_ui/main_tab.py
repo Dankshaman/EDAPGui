@@ -1,64 +1,79 @@
 from nicegui import ui
 
-def create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls):
-    with ui.row():
-        with ui.card().classes('w-1/2'):
+def create_main_tab(ed_ap, log_display, assist_checkboxes, ship_controls, ship_data):
+    with ui.grid(columns=3):
+        with ui.card():
             ui.label('MODE').classes('text-h6')
-            for checkbox in assist_checkboxes.values():
-                checkbox  # This will render the checkbox
+            with ui.row().classes('w-full'):
+                assist_checkbox_definitions = {
+                    'FSD Route Assist': lambda e: ed_ap.set_fsd_assist(e.value),
+                    'Supercruise Assist': lambda e: ed_ap.set_sc_assist(e.value),
+                    'Waypoint Assist': lambda e: ed_ap.set_waypoint_assist(e.value),
+                    'Robigo Assist': lambda e: ed_ap.set_robigo_assist(e.value),
+                    'AFK Combat Assist': lambda e: ed_ap.set_afk_combat_assist(e.value),
+                    'DSS Assist': lambda e: ed_ap.set_dss_assist(e.value),
+                    'Fleet Carrier Assist': lambda e: ed_ap.set_fc_assist(e.value),
+                    'Wing Mining Assist': lambda e: ed_ap.set_wing_mining_assist(e.value),
+                }
 
-        with ui.card().classes('w-1/2'):
+                checkbox_list = list(assist_checkbox_definitions.keys())
+                mid_point = (len(checkbox_list) + 1) // 2
+
+                with ui.column().classes('w-1/2'):
+                    for name in checkbox_list[:mid_point]:
+                        assist_checkboxes[name] = ui.checkbox(name, on_change=assist_checkbox_definitions[name])
+                with ui.column().classes('w-1/2'):
+                    for name in checkbox_list[mid_point:]:
+                        assist_checkboxes[name] = ui.checkbox(name, on_change=assist_checkbox_definitions[name])
+
+        with ui.card():
             ui.label('SHIP').classes('text-h6')
-            ship_controls['RollRate']
-            ship_controls['PitchRate']
-            ship_controls['YawRate']
-            ship_controls['SunPitchUp+Time']
+            ship_controls['RollRate'] = ui.number('RollRate').bind_value(ship_data, 'rollrate').on('change', lambda e: setattr(ed_ap, 'rollrate', e.value))
+            ship_controls['PitchRate'] = ui.number('PitchRate').bind_value(ship_data, 'pitchrate').on('change', lambda e: setattr(ed_ap, 'pitchrate', e.value))
+            ship_controls['YawRate'] = ui.number('YawRate').bind_value(ship_data, 'yawrate').on('change', lambda e: setattr(ed_ap, 'yawrate', e.value))
+            ship_controls['SunPitchUp+Time'] = ui.number('SunPitchUp+Time').bind_value(ship_data, 'sunpitchuptime').on('change', lambda e: setattr(ed_ap, 'sunpitchuptime', e.value))
 
             ui.separator()
 
-            ship_controls['AutoDockBoost']
-            ship_controls['AutoDockForwardTime']
-            ship_controls['AutoDockDelayTime']
+            ship_controls['AutoDockBoost'] = ui.checkbox('Auto-Dock Boost').bind_value(ship_data, 'autodock_boost').on('change', lambda e: setattr(ed_ap, 'autodock_boost', e.value))
+            ship_controls['AutoDockForwardTime'] = ui.number('Auto-Dock Fwd Time').bind_value(ship_data, 'autodock_forward_time').on('change', lambda e: setattr(ed_ap, 'autodock_forward_time', e.value))
+            ship_controls['AutoDockDelayTime'] = ui.number('Auto-Dock Delay').bind_value(ship_data, 'autodock_delay_time').on('change', lambda e: setattr(ed_ap, 'autodock_delay_time', e.value))
 
             ui.button('Test Roll Rate', on_click=ed_ap.ship_tst_roll)
             ui.button('Test Pitch Rate', on_click=ed_ap.ship_tst_pitch)
             ui.button('Test Yaw Rate', on_click=ed_ap.ship_tst_yaw)
 
-    with ui.row():
-        with ui.card().classes('w-full'):
-            ui.label('Waypoints').classes('text-h6')
+        with ui.column():
+            with ui.card():
+                ui.label('Waypoints').classes('text-h6')
 
-            def handle_wp_upload(e):
-                try:
-                    content = e.content.read().decode('utf-8')
-                    # The original code uses a file path, but with upload we have content.
-                    # The load_waypoint_file method in EDWayPoint.py reads from a file path.
-                    # I will need to save the uploaded content to a temporary file and pass the path.
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
-                        f.write(content)
-                        filepath = f.name
+                def handle_wp_upload(e):
+                    try:
+                        content = e.content.read().decode('utf-8')
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+                            f.write(content)
+                            filepath = f.name
 
-                    if ed_ap.waypoint.load_waypoint_file(filepath):
-                        ui.notify(f"Loaded waypoint file: {e.name}")
+                        if ed_ap.waypoint.load_waypoint_file(filepath):
+                            ui.notify(f"Loaded waypoint file: {e.name}")
+                        else:
+                            ui.notify(f"Failed to load waypoint file: {e.name}", type='negative')
+                    except Exception as ex:
+                        ui.notify(f"Error: {ex}", type='negative')
+
+                ui.upload(on_upload=handle_wp_upload, auto_upload=True, label="Load Waypoint File").props('icon=folder')
+
+                def reset_wp():
+                    if not ed_ap.waypoint_assist_enabled:
+                        ed_ap.waypoint.mark_all_waypoints_not_complete()
+                        ui.notify("Waypoint list reset.")
                     else:
-                        ui.notify(f"Failed to load waypoint file: {e.name}", type='negative')
-                except Exception as ex:
-                    ui.notify(f"Error: {ex}", type='negative')
+                        ui.notify("Waypoint Assist must be disabled before you can reset the list.", type='negative')
 
-            ui.upload(on_upload=handle_wp_upload, auto_upload=True, label="Load Waypoint File").props('icon=folder')
+                ui.button('Reset Waypoint List', on_click=reset_wp)
 
-            def reset_wp():
-                if not ed_ap.waypoint_assist_enabled:
-                    ed_ap.waypoint.mark_all_waypoints_not_complete()
-                    ui.notify("Waypoint list reset.")
-                else:
-                    ui.notify("Waypoint Assist must be disabled before you can reset the list.", type='negative')
-
-            ui.button('Reset Waypoint List', on_click=reset_wp)
-
-    with ui.row():
-        with ui.card().classes('w-full'):
-            ui.label('LOG').classes('text-h6')
-            log_display.classes('w-full')
-            log_display.push('Log messages will appear here.')
+            with ui.card():
+                ui.label('LOG').classes('text-h6')
+                log_display.classes('w-full')
+                log_display.push('Log messages will appear here.')
